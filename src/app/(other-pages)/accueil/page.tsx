@@ -3,11 +3,11 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Button, Text, Select, SelectOption } from 'rizzui';
 import toast from 'react-hot-toast';
-import { FaMapMarkerAlt, FaSearchLocation, FaGlobe } from 'react-icons/fa';
+import { FaMapMarkerAlt, FaSearchLocation, FaGlobe, FaPhoneAlt, FaEnvelope, FaInfoCircle } from 'react-icons/fa';
 import { GoogleMap, useJsApiLoader, Marker, InfoWindow } from '@react-google-maps/api';
-import Image from 'next/image'; // Import the Image component for doctor profiles
+import Image from 'next/image';
 
-// config/colors.ts
+// config/colors.ts (Assuming this file exists and is correctly imported)
 export const DEFAULT_PRESET_COLORS = {
   lighter: '#fef9c3', // Yellow 100
   light: '#fde047', // Yellow 300
@@ -25,18 +25,20 @@ interface DoctorLocation {
   country: string;
   latitude: number;
   longitude: number;
-  phone?: string; // Ensure this is available from your backend
+  phone?: string;
+  office_phone?: string;
   email?: string;
   speciality?: string;
   address?: string;
   city?: string;
-  profile_pic?: string; // Added profile_pic
+  profile_pic?: string;
 }
 
 interface UserLocation {
   latitude: number;
   longitude: number;
-  formattedAddress?: string | null; // Added for reverse geocoded address
+  formattedAddress: string | null; // Keeping this for internal use if needed, but not for UI display
+  permissionStatus: 'granted' | 'denied' | 'prompt' | 'unknown';
 }
 
 // --- Environment Variables ---
@@ -65,10 +67,11 @@ const mapContainerStyle = {
   boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)',
 };
 
-const defaultMapCenter = {
+const initialMapCenter = {
   lat: 34.0, // A more central point for Tunisia, can be adjusted
   lng: 9.0
 };
+const initialMapZoom = 2; // Default world view zoom
 
 // Ensure 'places' and 'geocoding' libraries are loaded
 const mapLibraries: google.maps.Libraries[] = ['places', 'geocoding'];
@@ -79,23 +82,25 @@ export default function FindDoctorsPage() {
   const [closestDoctor, setClosestDoctor] = useState<DoctorLocation | null>(null);
   const [loadingDoctors, setLoadingDoctors] = useState(true);
   const [loadingUserLocation, setLoadingUserLocation] = useState(true);
-  const [loadingUserAddress, setLoadingUserAddress] = useState(false); // New loading state for geocoding
   const [error, setError] = useState<string | null>(null);
   const [selectedCountry, setSelectedCountry] = useState<string | null>(null);
   const [availableCountries, setAvailableCountries] = useState<SelectOption[]>([]);
   const [activeInfoWindow, setActiveInfoWindow] = useState<DoctorLocation | null>(null);
   const [isFindingClosestDoctor, setIsFindingClosestDoctor] = useState(false);
+  // New state for dynamic map center and zoom
+  const [mapCenter, setMapCenter] = useState(initialMapCenter);
+  const [mapZoom, setMapZoom] = useState(initialMapZoom);
 
   const { isLoaded, loadError } = useJsApiLoader({
     id: 'google-map-script',
     googleMapsApiKey: MAPS_API_KEY as string,
     libraries: mapLibraries,
     language: 'en',
-    region: 'TN', // Set default region for Geocoding API if most users are from Tunisia
+    region: 'TN',
   });
 
   const mapInstanceRef = useRef<google.maps.Map | null>(null);
-  const geocoderRef = useRef<google.maps.Geocoder | null>(null); // Ref for Geocoder instance
+  const geocoderRef = useRef<google.maps.Geocoder | null>(null);
 
   // Initialize Geocoder once map libraries are loaded
   useEffect(() => {
@@ -106,27 +111,38 @@ export default function FindDoctorsPage() {
   }, [isLoaded]);
 
   // Function to perform reverse geocoding for user's initial location
+  // This is kept mostly for the toast message.
   const reverseGeocodeUserLocation = useCallback(async (lat: number, lng: number) => {
-    if (!geocoderRef.current) {
-      console.warn("Geocoder not ready for reverse geocoding.");
-      return;
-    }
-    setLoadingUserAddress(true);
-    try {
-      const response = await geocoderRef.current.geocode({ location: { lat, lng } });
-      if (response.results && response.results[0]) {
-        const fullAddress = response.results[0].formatted_address;
-        setUserLocation(prev => prev ? { ...prev, formattedAddress: fullAddress } : null);
-        toast.success(`Your address: ${fullAddress.split(',')[0]} detected!`); // Shorter toast
-      } else {
-        setUserLocation(prev => prev ? { ...prev, formattedAddress: 'Address not found' } : null);
-        toast.info('Could not find a human-readable address for your location.');
+    // No need for setLoadingUserAddress(true) as it's not reflected in UI anymore.
+    if (geocoderRef.current) {
+      try {
+        const response = await geocoderRef.current.geocode({ location: { lat, lng } });
+        if (response.results && response.results[0]) {
+          const fullAddress = response.results[0].formatted_address;
+          toast.success(`Your general location detected: ${fullAddress.split(',')[0]}`);
+          return;
+        } else {
+          console.warn("No results from Google Maps JS API geocoder.");
+        }
+      } catch (err) {
+        console.warn("JS Geocoder failed, falling back to REST API.", err);
       }
-    } catch (geoError: any) {
-      console.error('Reverse Geocoding Error:', geoError);
-      setUserLocation(prev => prev ? { ...prev, formattedAddress: 'Error detecting address' } : null);
-    } finally {
-      setLoadingUserAddress(false);
+    }
+
+    try {
+      const res = await fetch(`https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lng}&key=${MAPS_API_KEY}`);
+      const data = await res.json();
+
+      if (data.status === "OK" && data.results.length > 0) {
+        const fullAddress = data.results[0].formatted_address;
+        toast.success(`Your general location detected: ${fullAddress.split(',')[0]}`);
+      } else {
+        const errorMessage = data.error_message || 'Address not found';
+        
+      }
+    } catch (err) {
+      console.error("REST Geocoding failed:", err);
+      toast.error("Address lookup failed via fallback.");
     }
   }, []);
 
@@ -156,7 +172,7 @@ export default function FindDoctorsPage() {
       }
     });
 
-    if (currentUserLocation && currentUserLocation.latitude !== undefined && currentUserLocation.longitude !== undefined) {
+    if (currentUserLocation && currentUserLocation.latitude !== undefined && currentUserLocation.longitude !== undefined && currentUserLocation.permissionStatus === 'granted') {
       bounds.extend({ lat: currentUserLocation.latitude, lng: currentUserLocation.longitude });
       hasValidLocations = true;
     }
@@ -174,14 +190,26 @@ export default function FindDoctorsPage() {
         }
       });
     } else {
-      map.setCenter(defaultMapCenter);
-      map.setZoom(2);
+      // If no valid locations, set to default center and zoom
+      map.setCenter(initialMapCenter);
+      map.setZoom(initialMapZoom);
     }
   }, []);
 
   const onMapLoad = useCallback((map: google.maps.Map) => {
     mapInstanceRef.current = map;
     console.log("Map instance loaded and set in ref.");
+    // Initial centering based on user location if available, otherwise default
+    if (userLocation && userLocation.permissionStatus === 'granted') {
+      map.setCenter({ lat: userLocation.latitude, lng: userLocation.longitude });
+      map.setZoom(12); // A good zoom level for local area
+      console.log("Map centered and zoomed on user location during load.");
+    } else {
+      map.setCenter(initialMapCenter);
+      map.setZoom(initialMapZoom);
+      console.log("Map centered on default location during load.");
+    }
+    // Then call updateMapBoundsAndCenter to ensure all markers are visible after initial load
     updateMapBoundsAndCenter(map, doctors, userLocation, selectedCountry);
   }, [doctors, userLocation, selectedCountry, updateMapBoundsAndCenter]);
 
@@ -242,69 +270,109 @@ export default function FindDoctorsPage() {
     fetchDoctors();
   }, []);
 
-  // --- 2. Get User Location Automatically ---
+  // --- 2. Get User Location Automatically on load and set map center/zoom ---
   useEffect(() => {
-    if (typeof window !== 'undefined' && !userLocation && !error) {
+    if (typeof window !== 'undefined' && isLoaded) {
       if (!navigator.geolocation) {
-        setError('Geolocation is not supported by your browser. Please use a browser that supports it or manually input your location.');
+        setError('Geolocation is not supported by your browser. Please use a browser that supports it.');
         toast.error('Geolocation is not supported by your browser.');
         setLoadingUserLocation(false);
+        setUserLocation({ latitude: 0, longitude: 0, formattedAddress: null, permissionStatus: 'denied' });
+        // Set map to default if geolocation not supported
+        setMapCenter(initialMapCenter);
+        setMapZoom(initialMapZoom);
         return;
       }
 
       setLoadingUserLocation(true);
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          const { latitude, longitude } = position.coords;
-          setUserLocation({ latitude, longitude, formattedAddress: null }); // Initialize with null address for geocoding trigger
-          setError(null);
-          setLoadingUserLocation(false);
-        },
-        (geoError) => {
-          let errorMessage = 'Failed to get your location automatically.';
-          switch (geoError.code) {
-            case geoError.PERMISSION_DENIED:
-              errorMessage = 'Location access denied by user. Please enable it in browser settings to use location features.';
-              break;
-            case geoError.POSITION_UNAVAILABLE:
-              errorMessage = 'Location information is unavailable.';
-              break;
-            case geoError.TIMEOUT:
-              errorMessage = 'The request to get user location timed out.';
-              break;
-            default:
-              errorMessage = `An unknown error occurred while detecting location: ${geoError.message}`;
-              break;
-          }
-          setError(errorMessage);
-          toast.error(errorMessage);
-          console.error('Geolocation Error:', geoError);
-          setLoadingUserLocation(false);
-        },
-        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
-      );
-    }
-  }, [userLocation, error]);
+      navigator.permissions.query({ name: 'geolocation' }).then((permissionStatus) => {
+        const currentPermission = permissionStatus.state;
+        setUserLocation(prev => prev ? { ...prev, permissionStatus: currentPermission } : { latitude: 0, longitude: 0, formattedAddress: null, permissionStatus: currentPermission });
 
-  // Effect to trigger reverse geocoding when userLocation (latitude/longitude) is set and API is loaded
-  useEffect(() => {
-    if (userLocation && userLocation.latitude !== undefined && userLocation.longitude !== undefined && userLocation.formattedAddress === null && isLoaded) {
-      reverseGeocodeUserLocation(userLocation.latitude, userLocation.longitude);
+        if (currentPermission === 'granted' || currentPermission === 'prompt') {
+          navigator.geolocation.getCurrentPosition(
+            (position) => {
+              const { latitude, longitude } = position.coords;
+              setUserLocation({ latitude, longitude, formattedAddress: null, permissionStatus: 'granted' });
+              setError(null);
+              setLoadingUserLocation(false);
+              // Set map center and zoom to user's location immediately
+              setMapCenter({ lat: latitude, lng: longitude });
+              setMapZoom(12); // Zoom in on the user's location
+              reverseGeocodeUserLocation(latitude, longitude); // Call for toast message
+            },
+            (geoError) => {
+              let errorMessage = 'Failed to get your location automatically.';
+              let permissionState: 'denied' | 'prompt' | 'unknown' = 'unknown';
+
+              switch (geoError.code) {
+                case geoError.PERMISSION_DENIED:
+                  errorMessage = 'Location access denied by user. Please enable it in browser settings.';
+                  permissionState = 'denied';
+                  break;
+                case geoError.POSITION_UNAVAILABLE:
+                  errorMessage = 'Location information is unavailable.';
+                  break;
+                case geoError.TIMEOUT:
+                  errorMessage = 'The request to get user location timed out.';
+                  break;
+                default:
+                  errorMessage = `An unknown error occurred while detecting location: ${geoError.message}`;
+                  break;
+              }
+              setError(errorMessage);
+              toast.error(errorMessage);
+              console.error('Geolocation Error:', geoError);
+              setLoadingUserLocation(false);
+              setUserLocation(prev => prev ? { ...prev, permissionStatus: permissionState } : { latitude: 0, longitude: 0, formattedAddress: null, permissionStatus: permissionState });
+              // Revert to default map center/zoom on error
+              setMapCenter(initialMapCenter);
+              setMapZoom(initialMapZoom);
+            },
+            { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+          );
+        } else if (currentPermission === 'denied') {
+          setLoadingUserLocation(false);
+          setError('Location access previously denied. Please enable it in your browser settings to use location features.');
+          toast.error('Location access denied. Please enable it in browser settings.');
+          // Revert to default map center/zoom if denied
+          setMapCenter(initialMapCenter);
+          setMapZoom(initialMapZoom);
+        } else {
+          setLoadingUserLocation(false);
+          setError('Location permission status is uncertain. Please try again.');
+          toast.info('Location permission needed.');
+          // Revert to default map center/zoom if uncertain
+          setMapCenter(initialMapCenter);
+          setMapZoom(initialMapZoom);
+        }
+      });
     }
-  }, [userLocation, reverseGeocodeUserLocation, isLoaded]);
+  }, [isLoaded, reverseGeocodeUserLocation]); // Added reverseGeocodeUserLocation as dependency
+
+  // This useEffect is no longer strictly needed for geocoding, as the main
+  // location detection already calls reverseGeocodeUserLocation.
+  // Keeping it as a placeholder if there were other reasons it was there.
+  // useEffect(() => {
+  //   if (userLocation && userLocation.latitude !== undefined && userLocation.longitude !== undefined && userLocation.formattedAddress === null && isLoaded) {
+  //     reverseGeocodeUserLocation(userLocation.latitude, userLocation.longitude);
+  //   }
+  // }, [userLocation, reverseGeocodeUserLocation, isLoaded]);
 
   // --- 3. Trigger map updates when relevant data changes ---
   useEffect(() => {
-    if (isLoaded && mapInstanceRef.current && (!loadingDoctors || !loadingUserLocation)) {
+    if (isLoaded && mapInstanceRef.current && !loadingDoctors && !loadingUserLocation) {
+      // Only update map if both doctors and user location are done loading
       console.log("Data changed, triggering map bounds update.");
       updateMapBoundsAndCenter(mapInstanceRef.current, doctors, userLocation, selectedCountry);
     }
   }, [isLoaded, doctors, userLocation, selectedCountry, updateMapBoundsAndCenter, loadingDoctors, loadingUserLocation]);
 
+
   const findClosestDoctor = useCallback(() => {
     setIsFindingClosestDoctor(true);
-    if (!userLocation || userLocation.latitude === undefined || userLocation.longitude === undefined) {
-      toast.error('Your location is required to find the closest doctor. Please allow location access in your browser, or refresh the page.');
+    if (!userLocation || userLocation.latitude === undefined || userLocation.longitude === undefined || userLocation.permissionStatus !== 'granted') {
+      toast.error('Your **granted location permission** is required to find the closest doctor. Please enable it in your browser settings.');
       setIsFindingClosestDoctor(false);
       return;
     }
@@ -366,7 +434,7 @@ export default function FindDoctorsPage() {
 
   const handleCountryChange = useCallback((value: string | null) => {
     setSelectedCountry(value);
-    setClosestDoctor(null);
+    setClosestDoctor(null); // Reset closest doctor when country filter changes
     setActiveInfoWindow(null); // Close any open info window when country filter changes
     if (mapInstanceRef.current) {
       const filteredDoctors = value ? doctors.filter(doc => doc.country === value) : doctors;
@@ -400,19 +468,20 @@ export default function FindDoctorsPage() {
     return (
       <GoogleMap
         mapContainerStyle={mapContainerStyle}
-        center={defaultMapCenter}
-        zoom={2}
+        // Use dynamic mapCenter and mapZoom
+        center={mapCenter}
+        zoom={mapZoom}
         options={mapOptions}
         onLoad={onMapLoad}
         onUnmount={onMapUnmount}
       >
         {/* User Location Marker */}
-        {userLocation && (
+        {userLocation && userLocation.permissionStatus === 'granted' && (
           <Marker
             position={{ lat: userLocation.latitude, lng: userLocation.longitude }}
             title="Your Location"
             icon={{
-              url: 'http://maps.google.com/mapfiles/ms/icons/blue-dot.png', // More reliable URL for blue dot
+              url: 'http://maps.google.com/mapfiles/ms/icons/blue-dot.png', // A clearer blue dot
               scaledSize: new window.google.maps.Size(32, 32)
             }}
           />
@@ -427,7 +496,7 @@ export default function FindDoctorsPage() {
                 key={doc.id}
                 position={{ lat: doc.latitude, lng: doc.longitude }}
                 title={doc.user_name || 'Doctor'}
-                onClick={() => setActiveInfoWindow(doc)} // This allows clicking any marker for info
+                onClick={() => setActiveInfoWindow(doc)}
                 icon={{
                   url: closestDoctor?.id === doc.id ? 'http://maps.google.com/mapfiles/ms/icons/green-dot.png' : 'http://maps.google.com/mapfiles/ms/icons/red-dot.png', // Green for closest, red for others
                   scaledSize: new window.google.maps.Size(32, 32)
@@ -442,16 +511,16 @@ export default function FindDoctorsPage() {
             position={{ lat: activeInfoWindow.latitude, lng: activeInfoWindow.longitude }}
             onCloseClick={() => setActiveInfoWindow(null)}
           >
-            <div className="p-3 flex flex-col space-y-1 text-gray-800 font-sans">
+            <div className="p-3 flex flex-col space-y-1 text-gray-800 font-sans min-w-[200px] max-w-[300px]">
               {activeInfoWindow.profile_pic && (
                 <div className="mb-2 flex justify-center">
                   <Image
                     src={activeInfoWindow.profile_pic}
                     alt={activeInfoWindow.user_name || 'Doctor Profile'}
-                    width={80} // Adjust size as needed
-                    height={80} // Adjust size as needed
+                    width={80}
+                    height={80}
                     className="rounded-full object-cover border-2 border-gray-300 shadow-md"
-                    unoptimized={true} // Add unoptimized for external images or if you don't need Next.js image optimization
+                    unoptimized={true}
                   />
                 </div>
               )}
@@ -460,24 +529,28 @@ export default function FindDoctorsPage() {
               </h3>
               {activeInfoWindow.speciality && <p className="text-sm text-gray-600 text-center"><strong>Speciality:</strong> {activeInfoWindow.speciality}</p>}
               {(activeInfoWindow.address || activeInfoWindow.city || activeInfoWindow.country) && (
-                <p className="text-sm text-gray-600 flex items-center justify-center"> {/* Added justify-center */}
-                  <FaMapMarkerAlt className="mr-1 text-gray-500" />
+                <p className="text-sm text-gray-600 flex items-center justify-center text-center">
+                  <FaMapMarkerAlt className="mr-1 text-gray-500 flex-shrink-0" />
                   {activeInfoWindow.address ? `${activeInfoWindow.address}, ` : ''}
                   {activeInfoWindow.city ? `${activeInfoWindow.city}, ` : ''}
                   {activeInfoWindow.country || ''}
                 </p>
               )}
-              {activeInfoWindow.phone && (
-                <p className="text-sm text-gray-600 flex items-center justify-center"> {/* Added justify-center */}
-                  📞 <a href={`tel:${activeInfoWindow.phone}`} className="hover:underline" style={{ color: DEFAULT_PRESET_COLORS.dark }}>{activeInfoWindow.phone}</a>
+              {/* ALWAYS SHOW PHONE NUMBER, prioritizing office_phone if available */}
+              {(activeInfoWindow.phone || activeInfoWindow.office_phone) && (
+                <p className="text-sm text-gray-600 flex items-center justify-center">
+                  <FaPhoneAlt className="mr-1 text-gray-500" />
+                  <a href={`tel:${activeInfoWindow.office_phone || activeInfoWindow.phone}`} className="hover:underline" style={{ color: DEFAULT_PRESET_COLORS.dark }}>
+                    {activeInfoWindow.office_phone || activeInfoWindow.phone}
+                  </a>
                 </p>
               )}
               {activeInfoWindow.email && (
-                <p className="text-sm text-gray-600 flex items-center justify-center"> {/* Added justify-center */}
-                  📧 <a href={`mailto:${activeInfoWindow.email}`} className="hover:underline" style={{ color: DEFAULT_PRESET_COLORS.dark }}>{activeInfoWindow.email}</a>
+                <p className="text-sm text-gray-600 flex items-center justify-center">
+                  <FaEnvelope className="mr-1 text-gray-500" />
+                  <a href={`mailto:${activeInfoWindow.email}`} className="hover:underline" style={{ color: DEFAULT_PRESET_COLORS.dark }}>{activeInfoWindow.email}</a>
                 </p>
               )}
-              <p className="text-xs text-gray-500 mt-2 text-center">Lat: {activeInfoWindow.latitude.toFixed(4)}, Lng: {activeInfoWindow.longitude.toFixed(4)}</p>
             </div>
           </InfoWindow>
         )}
@@ -491,7 +564,7 @@ export default function FindDoctorsPage() {
         background: `linear-gradient(to bottom right, ${DEFAULT_PRESET_COLORS.lighter}, ${DEFAULT_PRESET_COLORS.light})`,
       }}
     >
-      <div className="max-w-7xl w-full mx-auto bg-white rounded-3xl shadow-xl p-6 sm:p-10 border-px border-gray-200"> {/* Changed 'border' to 'border-px' for smaller border */}
+      <div className="max-w-7xl w-full mx-auto bg-white rounded-3xl shadow-xl p-6 sm:p-10 border-px border-gray-200">
         <header className="text-center mb-10">
           <h1
             className="text-6xl font-extrabold mb-4 leading-tight tracking-tight drop-shadow-lg"
@@ -538,7 +611,8 @@ export default function FindDoctorsPage() {
           <div className="flex flex-col justify-end">
             <Button
               onClick={findClosestDoctor}
-              disabled={!userLocation || doctors.length === 0 || loadingDoctors || isFindingClosestDoctor}
+              // Disable if user location not granted, no doctors, or currently loading
+              disabled={!userLocation || userLocation.permissionStatus !== 'granted' || doctors.length === 0 || loadingDoctors || isFindingClosestDoctor}
               className="w-full h-12 rounded-xl text-white transition-all duration-300 transform hover:-translate-y-0.5 shadow-md hover:shadow-lg flex items-center justify-center text-base font-semibold"
               isLoading={isFindingClosestDoctor}
               style={{
@@ -599,28 +673,7 @@ export default function FindDoctorsPage() {
           >
             <FaMapMarkerAlt className="mr-4 text-2xl flex-shrink-0" style={{ color: DEFAULT_PRESET_COLORS.default }} />
             <div>
-              <h2 className="font-bold text-xl mb-2">Your Detected Location:</h2>
-              {loadingUserAddress ? (
-                <p className="text-base flex items-center">
-                  <svg className="animate-spin h-4 w-4 mr-2" style={{ color: DEFAULT_PRESET_COLORS.default }} viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                  </svg>
-                  Detecting address...
-                </p>
-              ) : (
-                <>
-                  {userLocation.formattedAddress ? (
-                    <p className="text-base">Address: <span className="font-semibold">{userLocation.formattedAddress}</span></p>
-                  ) : (
-                    <>
-                      <p className="text-base">Latitude: <span className="font-mono">{userLocation.latitude.toFixed(6)}</span></p>
-                      <p className="text-base">Longitude: <span className="font-mono">{userLocation.longitude.toFixed(6)}</span></p>
-                      <p className="text-sm mt-1 text-gray-500">Address could not be determined automatically.</p>
-                    </>
-                  )}
-                </>
-              )}
+              
               <p className="text-sm mt-2" style={{ color: DEFAULT_PRESET_COLORS.dark }}>Your location is marked with a blue dot on the map.</p>
             </div>
           </div>
@@ -641,7 +694,8 @@ export default function FindDoctorsPage() {
               {closestDoctor.speciality && <p className="text-sm mb-1">Speciality: {closestDoctor.speciality}</p>}
               <p className="text-base mb-1">Country: {closestDoctor.country}</p>
               {closestDoctor.address && <p className="text-base mb-1">Address: {closestDoctor.address}{closestDoctor.city ? `, ${closestDoctor.city}` : ''}</p>}
-              {closestDoctor.phone && <p className="text-base mb-1">Phone: <a href={`tel:${closestDoctor.phone}`} className="hover:underline" style={{ color: DEFAULT_PRESET_COLORS.dark }}>{closestDoctor.phone}</a></p>}
+              {/* Prioritize office_phone for display if available */}
+              {(closestDoctor.office_phone || closestDoctor.phone) && <p className="text-base mb-1">Phone: <a href={`tel:${closestDoctor.office_phone || closestDoctor.phone}`} className="hover:underline" style={{ color: DEFAULT_PRESET_COLORS.dark }}>{closestDoctor.office_phone || closestDoctor.phone}</a></p>}
               {closestDoctor.email && <p className="text-base mb-1">Email: <a href={`mailto:${closestDoctor.email}`} className="hover:underline" style={{ color: DEFAULT_PRESET_COLORS.dark }}>{closestDoctor.email}</a></p>}
               <p className="text-xs text-gray-500 mt-2">Lat: {closestDoctor.latitude.toFixed(6)}, Lng: {closestDoctor.longitude.toFixed(6)}</p>
             </div>

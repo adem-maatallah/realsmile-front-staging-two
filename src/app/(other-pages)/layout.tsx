@@ -8,7 +8,7 @@ import SocialItems from '@/components/ui/social-shares';
 import { usePathname, useRouter } from 'next/navigation';
 import { siteConfig } from '@/config/site.config';
 import { routes } from '@/config/routes';
-import React, { useState, useEffect } from 'react'; // Import useState and useEffect
+import React, { useState, useEffect } from 'react';
 export const DEFAULT_PRESET_COLORS = {
   lighter: '#fef9c3', // Yellow 100
   light: '#fde047', // Yellow 300
@@ -16,17 +16,14 @@ export const DEFAULT_PRESET_COLORS = {
   dark: '#a16207', // Yellow 800
   foreground: '#ffffff',
 };
-// Optional: Add icons for the buttons for better visual cue
-import { FaSignInAlt } from 'react-icons/fa'; // Changed icon for Sign In
+import { FaSignInAlt } from 'react-icons/fa';
 
-// Routes where the "Sign In" button should NOT appear (or where a specific button isn't needed)
 const ignoreSignInButtonRoutes = [
-  routes.auth.signIn, // Don't show "Sign In" button on the sign-in page itself
-  routes.auth.signUp, // Or sign-up page
+  routes.auth.signIn,
+  routes.auth.signUp,
   routes.accessDenied,
   routes.notFound,
   routes.verifyLocation,
-  // Add other authentication-related routes here
 ];
 
 export default function OtherPagesLayout({
@@ -37,9 +34,8 @@ export default function OtherPagesLayout({
   const { push } = useRouter();
   const pathName = usePathname();
 
-  // State to control header visibility on scroll
   const [showHeader, setShowHeader] = useState(false);
-  const scrollThreshold = 100; // Pixels scrolled before header appears
+  const scrollThreshold = 100;
 
   useEffect(() => {
     const handleScroll = () => {
@@ -50,14 +46,12 @@ export default function OtherPagesLayout({
       }
     };
 
-    // Add scroll listener only on client side
     if (typeof window !== 'undefined') {
       window.addEventListener('scroll', handleScroll);
       return () => window.removeEventListener('scroll', handleScroll);
     }
   }, [scrollThreshold]);
 
-  // Determine if the "Sign In" button should be shown
   const shouldShowSignInButton = !ignoreSignInButtonRoutes.includes(pathName);
 
   return (
@@ -67,12 +61,11 @@ export default function OtherPagesLayout({
         background: `linear-gradient(to bottom right, ${DEFAULT_PRESET_COLORS.lighter}, ${DEFAULT_PRESET_COLORS.light})`,
       }}
     >
-      {/* Fixed header - initially hidden, appears on scroll */}
       <header
         className={cn(
           "fixed top-0 left-0 w-full z-50 transition-all duration-300 transform",
-          showHeader ? "translate-y-0 opacity-100 bg-primary-foreground bg-opacity-95 shadow-lg" : "-translate-y-full opacity-0", // Hide initially, show on scroll
-          "px-6 py-5 md:px-10 md:py-6 lg:px-12 lg:py-7" // Increased padding for a bigger bar
+          showHeader ? "translate-y-0 opacity-100 bg-primary-foreground bg-opacity-95 shadow-lg" : "-translate-y-full opacity-0",
+          "px-6 py-5 md:px-10 md:py-6 lg:px-12 lg:py-7"
         )}
       >
         <div className="mx-auto flex max-w-[1520px] items-center justify-between">
@@ -87,7 +80,6 @@ export default function OtherPagesLayout({
             />
           </Link>
 
-          {/* Navigation/Action button */}
           <nav className="flex items-center gap-4">
             {shouldShowSignInButton && (
               <Button
@@ -110,7 +102,6 @@ export default function OtherPagesLayout({
         </div>
       </header>
 
-      {/* Hero Section Placeholder - This is where your unique landing page content goes */}
       <div
         className="relative w-full min-h-screen flex flex-col items-center justify-center text-center overflow-hidden pt-[var(--header-height, 0px)]"
         style={{
@@ -169,14 +160,12 @@ export default function OtherPagesLayout({
         </div>
       </div>
 
-      {/* Main content area - children will be rendered here for content below the hero */}
       <main className="flex-grow flex flex-col justify-center items-center py-10 md:py-16 px-4">
         {children}
       </main>
 
-      {/* Footer */}
       <footer
-        className="w-full py-8 px-4 border-t border-px text-center text-sm" // Added border-px to border-t
+        className="w-full py-8 px-4 border-t border-gray-200 border-px text-center text-sm" // Changed border-t to border-t border-px
         style={{
           backgroundColor: DEFAULT_PRESET_COLORS.default,
           color: DEFAULT_PRESET_COLORS.foreground,
