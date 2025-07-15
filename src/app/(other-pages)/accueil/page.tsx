@@ -2,7 +2,8 @@
 
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Button, Text, Select, SelectOption } from 'rizzui';
-import toast from 'react-hot-toast';
+import toast from 'react-hot-toast'; // Revert to standard default import
+import { Toaster } from 'react-hot-toast'; // Import Toaster component
 import { FaMapMarkerAlt, FaSearchLocation, FaGlobe, FaPhoneAlt, FaEnvelope, FaInfoCircle } from 'react-icons/fa';
 import { GoogleMap, useJsApiLoader, Marker, InfoWindow } from '@react-google-maps/api';
 import Image from 'next/image';
@@ -11,8 +12,8 @@ import Image from 'next/image';
 export const DEFAULT_PRESET_COLORS = {
   lighter: '#fef9c3', // Yellow 100
   light: '#fde047', // Yellow 300
-  default: '#d39424', // <-- THIS IS THE NEW VALUE YOU REQUESTED
-  dark: '#a16207', // Yellow 800
+  default: '#d39424',
+  dark: '#a16207',
   foreground: '#ffffff',
 };
 
@@ -23,8 +24,8 @@ interface DoctorLocation {
   first_name?: string;
   last_name?: string;
   country: string;
-  latitude: number;
-  longitude: number;
+  latitude: number | null; // Can be null if not precise
+  longitude: number | null; // Can be null if not precise
   phone?: string;
   office_phone?: string;
   email?: string;
@@ -37,13 +38,14 @@ interface DoctorLocation {
 interface UserLocation {
   latitude: number;
   longitude: number;
-  formattedAddress: string | null; // Keeping this for internal use if needed, but not for UI display
+  formattedAddress: string | null;
   permissionStatus: 'granted' | 'denied' | 'prompt' | 'unknown';
+  countryCode?: string | null; // Keep for toast/dropdown suggestion, not core map logic
 }
 
 // --- Environment Variables ---
 const BACKEND_API_BASE_URL = process.env.NEXT_PUBLIC_API_URL;
-const MAPS_API_KEY = process.env.NEXT_PUBLIC_MAPS_API_KEY;
+const MAPS_API_KEY = process.env.NEXT_PUBLIC_MAPS_API_KEY; // IMPORTANT: Ensure this is correctly set in your .env.local or .env file
 
 // --- Haversine Formula ---
 function haversineDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
@@ -71,10 +73,19 @@ const initialMapCenter = {
   lat: 34.0, // A more central point for Tunisia, can be adjusted
   lng: 9.0
 };
-const initialMapZoom = 2; // Default world view zoom
+const initialMapZoom = 2; // Default world view zoom (showing entire world)
 
-// Ensure 'places' and 'geocoding' libraries are loaded
 const mapLibraries: google.maps.Libraries[] = ['places', 'geocoding'];
+
+// Predefined central coordinates for countries (expand as needed)
+const COUNTRY_CENTERS: { [key: string]: { lat: number; lng: number } } = {
+  "TN": { lat: 34.0, lng: 9.0 },
+  "MA": { lat: 31.7917, lng: -7.0926 },
+  "DZ": { lat: 28.0339, lng: 1.6596 },
+  "FR": { lat: 46.603354, lng: 1.888334 },
+  "ES": { lat: 40.463667, lng: -3.74922 },
+  // Add more countries here
+};
 
 export default function FindDoctorsPage() {
   const [doctors, setDoctors] = useState<DoctorLocation[]>([]);
@@ -83,66 +94,59 @@ export default function FindDoctorsPage() {
   const [loadingDoctors, setLoadingDoctors] = useState(true);
   const [loadingUserLocation, setLoadingUserLocation] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [selectedCountry, setSelectedCountry] = useState<string | null>(null);
+  const [selectedCountry, setSelectedCountry] = useState<string | null>(null); // For manual filter
   const [availableCountries, setAvailableCountries] = useState<SelectOption[]>([]);
   const [activeInfoWindow, setActiveInfoWindow] = useState<DoctorLocation | null>(null);
   const [isFindingClosestDoctor, setIsFindingClosestDoctor] = useState(false);
-  // New state for dynamic map center and zoom
-  const [mapCenter, setMapCenter] = useState(initialMapCenter);
-  const [mapZoom, setMapZoom] = useState(initialMapZoom);
+
+  // Derived state for map center and zoom, reactive to userLocation
+  const actualMapCenter = useMemo(() => {
+    if (userLocation?.permissionStatus === 'granted' && userLocation.latitude !== undefined && userLocation.longitude !== undefined) {
+      return { lat: userLocation.latitude, lng: userLocation.longitude };
+    }
+    return initialMapCenter;
+  }, [userLocation]);
+
+  const actualMapZoom = useMemo(() => {
+    if (userLocation?.permissionStatus === 'granted') {
+      return 14; // Good local zoom when user location is known
+    }
+    return initialMapZoom; // Default world view zoom
+  }, [userLocation]);
+
 
   const { isLoaded, loadError } = useJsApiLoader({
     id: 'google-map-script',
-    googleMapsApiKey: MAPS_API_KEY as string,
+    googleMapsApiKey: MAPS_API_KEY as string, // Ensure MAPS_API_KEY is correctly loaded from .env
     libraries: mapLibraries,
     language: 'en',
     region: 'TN',
   });
 
   const mapInstanceRef = useRef<google.maps.Map | null>(null);
-  const geocoderRef = useRef<google.maps.Geocoder | null>(null);
 
-  // Initialize Geocoder once map libraries are loaded
-  useEffect(() => {
-    if (isLoaded && !geocoderRef.current && window.google?.maps?.Geocoder) {
-      geocoderRef.current = new window.google.maps.Geocoder();
-      console.log("Google Maps Geocoder initialized.");
-    }
-  }, [isLoaded]);
-
-  // Function to perform reverse geocoding for user's initial location
-  // This is kept mostly for the toast message.
+  // Function to perform reverse geocoding using OpenStreetMap Nominatim
   const reverseGeocodeUserLocation = useCallback(async (lat: number, lng: number) => {
-    // No need for setLoadingUserAddress(true) as it's not reflected in UI anymore.
-    if (geocoderRef.current) {
-      try {
-        const response = await geocoderRef.current.geocode({ location: { lat, lng } });
-        if (response.results && response.results[0]) {
-          const fullAddress = response.results[0].formatted_address;
-          toast.success(`Your general location detected: ${fullAddress.split(',')[0]}`);
-          return;
-        } else {
-          console.warn("No results from Google Maps JS API geocoder.");
-        }
-      } catch (err) {
-        console.warn("JS Geocoder failed, falling back to REST API.", err);
-      }
-    }
-
     try {
-      const res = await fetch(`https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lng}&key=${MAPS_API_KEY}`);
+      const nominatimApiUrl = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lng}`;
+      const res = await fetch(nominatimApiUrl);
       const data = await res.json();
 
-      if (data.status === "OK" && data.results.length > 0) {
-        const fullAddress = data.results[0].formatted_address;
+      if (res.ok && data && data.display_name) {
+        const fullAddress = data.display_name;
+        const countryCode = data.address?.country_code?.toUpperCase() || null;
+
+        setUserLocation(prev => prev ? { ...prev, formattedAddress: fullAddress, countryCode: countryCode } : null);
         toast.success(`Your general location detected: ${fullAddress.split(',')[0]}`);
       } else {
-        const errorMessage = data.error_message || 'Address not found';
-        
+        const errorMessage = data.error || 'Address not found via OpenStreetMap.';
+        toast.error(`Address lookup failed: ${errorMessage}`);
+        setUserLocation(prev => prev ? { ...prev, formattedAddress: errorMessage, countryCode: null } : null);
       }
     } catch (err) {
-      console.error("REST Geocoding failed:", err);
-      toast.error("Address lookup failed via fallback.");
+      console.error("Nominatim Geocoding failed:", err);
+      toast.error("Address lookup failed via OpenStreetMap.");
+      setUserLocation(prev => prev ? { ...prev, formattedAddress: 'Geocoding request failed', countryCode: null } : null);
     }
   }, []);
 
@@ -151,7 +155,9 @@ export default function FindDoctorsPage() {
     map: google.maps.Map,
     currentDoctors: DoctorLocation[],
     currentUserLocation: UserLocation | null,
-    currentSelectedCountry: string | null
+    // Note: effectiveCountryFilter is used for filtering `doctorsToDisplayOnMap`
+    // If null, all doctors are considered for bounds.
+    effectiveCountryFilter: string | null
   ) => {
     if (!map || !window.google || !window.google.maps) {
       console.warn("Map or Google Maps API not fully ready for updateMapBoundsAndCenter.");
@@ -161,13 +167,27 @@ export default function FindDoctorsPage() {
     const bounds = new window.google.maps.LatLngBounds();
     let hasValidLocations = false;
 
-    const doctorsToDisplay = currentSelectedCountry
-      ? currentDoctors.filter(doc => doc.country === currentSelectedCountry)
-      : currentDoctors;
+    // Determine which doctors to include in bounds calculation
+    // Always consider all doctors first, then filter if a specific country is requested for bounds adjustment
+    let doctorsForBounds = currentDoctors;
+    if (effectiveCountryFilter) {
+        const filteredByCountry = currentDoctors.filter(doc => doc.country && doc.country.toUpperCase() === effectiveCountryFilter.toUpperCase());
+        // If filtered list is not empty, use it. Otherwise, use all doctors.
+        if (filteredByCountry.length > 0) {
+            doctorsForBounds = filteredByCountry;
+        } else {
+            console.log(`No doctors found for bounds in ${effectiveCountryFilter}. Using all doctors.`);
+            doctorsForBounds = currentDoctors;
+        }
+    }
+    
+    doctorsForBounds.forEach(doc => {
+      // Use doctor's specific lat/long if available, else fallback to country center
+      const docLat = doc.latitude !== null ? doc.latitude : (COUNTRY_CENTERS[doc.country?.toUpperCase() || '']?.lat || null);
+      const docLng = doc.longitude !== null ? doc.longitude : (COUNTRY_CENTERS[doc.country?.toUpperCase() || '']?.lng || null);
 
-    doctorsToDisplay.forEach(doc => {
-      if (doc.latitude !== null && doc.longitude !== null) {
-        bounds.extend({ lat: doc.latitude, lng: doc.longitude });
+      if (docLat !== null && docLng !== null) {
+        bounds.extend({ lat: docLat, lng: docLng });
         hasValidLocations = true;
       }
     });
@@ -182,15 +202,16 @@ export default function FindDoctorsPage() {
       google.maps.event.addListenerOnce(map, 'idle', () => {
         const currentZoom = map.getZoom();
         if (currentZoom !== undefined) {
-          if (currentZoom < 4) {
+          if (currentZoom < 4) { // Prevent zooming too far out
             map.setZoom(4);
-          } else if (currentZoom > 15 && doctorsToDisplay.length + (currentUserLocation ? 1 : 0) <= 2) {
+          } else if (currentZoom > 15 && doctorsForBounds.length + (currentUserLocation ? 1 : 0) <= 2) {
+            // If only 1-2 markers, zoom in closer
             map.setZoom(15);
           }
         }
       });
     } else {
-      // If no valid locations, set to default center and zoom
+      // If no valid locations to fit, revert to initial/default view
       map.setCenter(initialMapCenter);
       map.setZoom(initialMapZoom);
     }
@@ -199,19 +220,10 @@ export default function FindDoctorsPage() {
   const onMapLoad = useCallback((map: google.maps.Map) => {
     mapInstanceRef.current = map;
     console.log("Map instance loaded and set in ref.");
-    // Initial centering based on user location if available, otherwise default
-    if (userLocation && userLocation.permissionStatus === 'granted') {
-      map.setCenter({ lat: userLocation.latitude, lng: userLocation.longitude });
-      map.setZoom(12); // A good zoom level for local area
-      console.log("Map centered and zoomed on user location during load.");
-    } else {
-      map.setCenter(initialMapCenter);
-      map.setZoom(initialMapZoom);
-      console.log("Map centered on default location during load.");
-    }
-    // Then call updateMapBoundsAndCenter to ensure all markers are visible after initial load
-    updateMapBoundsAndCenter(map, doctors, userLocation, selectedCountry);
-  }, [doctors, userLocation, selectedCountry, updateMapBoundsAndCenter]);
+    // Initial centering and bounds will be handled by the main useEffect below,
+    // which reacts to isLoaded, userLocation, and doctors data.
+    // No need to set center/zoom or call updateMapBoundsAndCenter here directly.
+  }, []);
 
   const onMapUnmount = useCallback(() => {
     mapInstanceRef.current = null;
@@ -262,7 +274,7 @@ export default function FindDoctorsPage() {
       } catch (err: any) {
         console.error('Error fetching doctors:', err);
         setError(`Failed to load doctors: ${err.message}. Please check your network connection and backend server.`);
-        toast.error(`Failed to load doctors: ${err.message}.`);
+        toast.error(`Failed to load doctors: ${err.message}.`); // Using `toast` directly
       } finally {
         setLoadingDoctors(false);
       }
@@ -270,103 +282,154 @@ export default function FindDoctorsPage() {
     fetchDoctors();
   }, []);
 
-  // --- 2. Get User Location Automatically on load and set map center/zoom ---
+  // --- 2. Get User Location Automatically on load ---
   useEffect(() => {
-    if (typeof window !== 'undefined' && isLoaded) {
-      if (!navigator.geolocation) {
-        setError('Geolocation is not supported by your browser. Please use a browser that supports it.');
-        toast.error('Geolocation is not supported by your browser.');
-        setLoadingUserLocation(false);
-        setUserLocation({ latitude: 0, longitude: 0, formattedAddress: null, permissionStatus: 'denied' });
-        // Set map to default if geolocation not supported
-        setMapCenter(initialMapCenter);
-        setMapZoom(initialMapZoom);
-        return;
+    if (typeof window === 'undefined' || !isLoaded) {
+      return;
+    }
+
+    if (!navigator.geolocation) {
+      setError('Geolocation is not supported by your browser. Please use a browser that supports it.');
+      toast.error('Geolocation is not supported by your browser.'); // Using `toast` directly
+      setLoadingUserLocation(false);
+      setUserLocation({ latitude: 0, longitude: 0, formattedAddress: null, permissionStatus: 'denied', countryCode: null });
+      return;
+    }
+
+    setLoadingUserLocation(true);
+
+    const handleGeolocationSuccess = (position: GeolocationPosition) => {
+      const { latitude, longitude } = position.coords;
+      console.log(`Geolocation successful: Lat ${latitude}, Lng ${longitude}`);
+      setUserLocation(prev => ({
+        ...prev!,
+        latitude,
+        longitude,
+        formattedAddress: null, // Will be filled by Nominatim (for toast only)
+        permissionStatus: 'granted'
+      }));
+      setError(null);
+      setLoadingUserLocation(false);
+      reverseGeocodeUserLocation(latitude, longitude);
+    };
+
+    const handleGeolocationError = (geoError: GeolocationPositionError) => {
+      let errorMessage = 'Failed to get your location automatically.';
+      let permissionState: 'denied' | 'prompt' | 'unknown' = 'unknown';
+
+      switch (geoError.code) {
+        case geoError.PERMISSION_DENIED:
+          errorMessage = 'Location access denied by user. Please enable it in browser settings.';
+          permissionState = 'denied';
+          break;
+        case geoError.POSITION_UNAVAILABLE:
+          errorMessage = 'Location information is unavailable (e.g., network error, GPS off).';
+          break;
+        case geoError.TIMEOUT:
+          errorMessage = 'The request to get user location timed out. Try again or check network.';
+          break;
+        default:
+          errorMessage = `An unknown error occurred while detecting location: ${geoError.message}`;
+          break;
       }
+      setError(errorMessage);
+      toast.error(errorMessage); // Using `toast` directly
+      console.error('Geolocation Error:', geoError);
+      setLoadingUserLocation(false);
+      setUserLocation(prev => ({
+        ...prev!,
+        latitude: prev?.latitude || 0,
+        longitude: prev?.longitude || 0,
+        formattedAddress: null,
+        permissionStatus: permissionState,
+        countryCode: null
+      }));
+    };
 
-      setLoadingUserLocation(true);
-      navigator.permissions.query({ name: 'geolocation' }).then((permissionStatus) => {
-        const currentPermission = permissionStatus.state;
-        setUserLocation(prev => prev ? { ...prev, permissionStatus: currentPermission } : { latitude: 0, longitude: 0, formattedAddress: null, permissionStatus: currentPermission });
+    navigator.permissions.query({ name: 'geolocation' }).then((permissionStatus) => {
+      const currentPermission = permissionStatus.state;
+      setUserLocation(prev => prev ? { ...prev, permissionStatus: currentPermission } : { latitude: 0, longitude: 0, formattedAddress: null, permissionStatus: currentPermission, countryCode: null });
 
-        if (currentPermission === 'granted' || currentPermission === 'prompt') {
-          navigator.geolocation.getCurrentPosition(
-            (position) => {
-              const { latitude, longitude } = position.coords;
-              setUserLocation({ latitude, longitude, formattedAddress: null, permissionStatus: 'granted' });
-              setError(null);
-              setLoadingUserLocation(false);
-              // Set map center and zoom to user's location immediately
-              setMapCenter({ lat: latitude, lng: longitude });
-              setMapZoom(12); // Zoom in on the user's location
-              reverseGeocodeUserLocation(latitude, longitude); // Call for toast message
-            },
-            (geoError) => {
-              let errorMessage = 'Failed to get your location automatically.';
-              let permissionState: 'denied' | 'prompt' | 'unknown' = 'unknown';
+      if (currentPermission === 'granted') {
+        navigator.geolocation.getCurrentPosition(
+          handleGeolocationSuccess,
+          handleGeolocationError,
+          { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 }
+        );
+      } else if (currentPermission === 'prompt') {
+        navigator.geolocation.getCurrentPosition(
+          handleGeolocationSuccess,
+          handleGeolocationError,
+          { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+        );
+      } else if (currentPermission === 'denied') {
+        setLoadingUserLocation(false);
+        setError('Location access previously denied. Please enable it in your browser settings to use location features.');
+        toast.error('Location access denied. Please enable it in browser settings.'); // Using `toast` directly
+        setUserLocation(prev => ({ ...prev!, permissionStatus: 'denied', countryCode: null }));
+      } else {
+        setLoadingUserLocation(false);
+        setError('Location permission status is uncertain. Please try again.');
+        toast.info('Location permission needed.'); // Using `toast` directly
+        setUserLocation(prev => ({ ...prev!, permissionStatus: 'unknown', countryCode: null }));
+      }
+    });
+  }, [isLoaded, reverseGeocodeUserLocation]);
 
-              switch (geoError.code) {
-                case geoError.PERMISSION_DENIED:
-                  errorMessage = 'Location access denied by user. Please enable it in browser settings.';
-                  permissionState = 'denied';
-                  break;
-                case geoError.POSITION_UNAVAILABLE:
-                  errorMessage = 'Location information is unavailable.';
-                  break;
-                case geoError.TIMEOUT:
-                  errorMessage = 'The request to get user location timed out.';
-                  break;
-                default:
-                  errorMessage = `An unknown error occurred while detecting location: ${geoError.message}`;
-                  break;
-              }
-              setError(errorMessage);
-              toast.error(errorMessage);
-              console.error('Geolocation Error:', geoError);
-              setLoadingUserLocation(false);
-              setUserLocation(prev => prev ? { ...prev, permissionStatus: permissionState } : { latitude: 0, longitude: 0, formattedAddress: null, permissionStatus: permissionState });
-              // Revert to default map center/zoom on error
-              setMapCenter(initialMapCenter);
-              setMapZoom(initialMapZoom);
-            },
-            { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
-          );
-        } else if (currentPermission === 'denied') {
-          setLoadingUserLocation(false);
-          setError('Location access previously denied. Please enable it in your browser settings to use location features.');
-          toast.error('Location access denied. Please enable it in browser settings.');
-          // Revert to default map center/zoom if denied
-          setMapCenter(initialMapCenter);
-          setMapZoom(initialMapZoom);
-        } else {
-          setLoadingUserLocation(false);
-          setError('Location permission status is uncertain. Please try again.');
-          toast.info('Location permission needed.');
-          // Revert to default map center/zoom if uncertain
-          setMapCenter(initialMapCenter);
-          setMapZoom(initialMapZoom);
-        }
-      });
-    }
-  }, [isLoaded, reverseGeocodeUserLocation]); // Added reverseGeocodeUserLocation as dependency
-
-  // This useEffect is no longer strictly needed for geocoding, as the main
-  // location detection already calls reverseGeocodeUserLocation.
-  // Keeping it as a placeholder if there were other reasons it was there.
-  // useEffect(() => {
-  //   if (userLocation && userLocation.latitude !== undefined && userLocation.longitude !== undefined && userLocation.formattedAddress === null && isLoaded) {
-  //     reverseGeocodeUserLocation(userLocation.latitude, userLocation.longitude);
-  //   }
-  // }, [userLocation, reverseGeocodeUserLocation, isLoaded]);
-
-  // --- 3. Trigger map updates when relevant data changes ---
+  // --- 3. Main Effect to control map view based on data readiness ---
   useEffect(() => {
-    if (isLoaded && mapInstanceRef.current && !loadingDoctors && !loadingUserLocation) {
-      // Only update map if both doctors and user location are done loading
-      console.log("Data changed, triggering map bounds update.");
-      updateMapBoundsAndCenter(mapInstanceRef.current, doctors, userLocation, selectedCountry);
+    if (!isLoaded || !mapInstanceRef.current) {
+      return;
     }
-  }, [isLoaded, doctors, userLocation, selectedCountry, updateMapBoundsAndCenter, loadingDoctors, loadingUserLocation]);
+
+    const map = mapInstanceRef.current;
+
+    // Condition 1: All data is loaded (doctors and user location)
+    if (!loadingDoctors && !loadingUserLocation) {
+      console.log("All necessary data loaded, triggering map bounds update.");
+      // For general map display, use `selectedCountry` if user manually chose a filter, otherwise null to consider all for initial bounds.
+      updateMapBoundsAndCenter(map, doctors, userLocation, selectedCountry);
+    }
+    // Condition 2: Map is loaded, and user location is available (but doctors might still be loading)
+    else if (userLocation?.permissionStatus === 'granted' && userLocation.latitude !== undefined && userLocation.longitude !== undefined) {
+      console.log("User location granted and map ready, centering on user.");
+      map.setCenter({ lat: userLocation.latitude, lng: userLocation.longitude });
+      map.setZoom(14); // Good local zoom
+    }
+    // Condition 3: Doctors data is loaded, but user location is NOT granted/loaded
+    // We still want to show all doctors if they're loaded
+    else if (!loadingDoctors && doctors.length > 0) {
+        console.log("Doctors data loaded, but user location not available/granted. Displaying all doctors.");
+        const bounds = new window.google.maps.LatLngBounds();
+        doctors.forEach(doc => {
+            // Use doctor's specific lat/long if available, else fallback to country center
+            const docLat = doc.latitude !== null ? doc.latitude : (COUNTRY_CENTERS[doc.country?.toUpperCase() || '']?.lat || null);
+            const docLng = doc.longitude !== null ? doc.longitude : (COUNTRY_CENTERS[doc.country?.toUpperCase() || '']?.lng || null);
+            if (docLat !== null && docLng !== null) {
+                bounds.extend({ lat: docLat, lng: docLng });
+            }
+        });
+        if (!bounds.isEmpty()) {
+            map.fitBounds(bounds);
+            google.maps.event.addListenerOnce(map, 'idle', () => {
+              const currentZoom = map.getZoom();
+              if (currentZoom !== undefined && currentZoom < 4) { // Prevent zooming too far out
+                map.setZoom(4);
+              }
+            });
+        } else {
+            // If no valid doctor locations for bounds, revert to default world view
+            map.setCenter(initialMapCenter);
+            map.setZoom(initialMapZoom);
+        }
+    }
+    // Condition 4: Fallback - Default map view or waiting for data/permission
+    else {
+      console.log("Default map view or waiting for data/permission.");
+      map.setCenter(initialMapCenter);
+      map.setZoom(initialMapZoom);
+    }
+  }, [isLoaded, doctors, userLocation, selectedCountry, updateMapBoundsAndCenter, loadingDoctors, loadingUserLocation, actualMapCenter, actualMapZoom]);
 
 
   const findClosestDoctor = useCallback(() => {
@@ -380,24 +443,51 @@ export default function FindDoctorsPage() {
     let closest: DoctorLocation | null = null;
     let minDistance = Infinity;
 
-    const doctorsToSearch = selectedCountry
-      ? doctors.filter(doc => doc.country === selectedCountry)
-      : doctors;
+    let doctorsToSearch = [...doctors]; // Start with all doctors
+
+    // Apply filtering logic for "Find Closest" button
+    // Priority: Manual filter > User's detected country filter > No filter (search all)
+    if (selectedCountry) {
+        const filteredBySelectedCountry = doctors.filter(doc => doc.country && doc.country.toUpperCase() === selectedCountry.toUpperCase());
+        if (filteredBySelectedCountry.length > 0) {
+            doctorsToSearch = filteredBySelectedCountry;
+            toast.info(`Searching for closest doctor within selected country: ${selectedCountry}.`);
+        } else {
+            toast.info(`No doctors found in selected country ${selectedCountry}. Searching globally for closest.`);
+            // No change to doctorsToSearch here, it remains all doctors
+        }
+    } else if (userLocation.countryCode) { // If no manual filter, try user's detected country
+        const filteredByUserCountry = doctors.filter(doc => doc.country && doc.country.toUpperCase() === userLocation.countryCode.toUpperCase());
+        if (filteredByUserCountry.length > 0) {
+            doctorsToSearch = filteredByUserCountry;
+            toast.info(`Searching for closest doctor within your detected country: ${userLocation.countryCode}.`);
+        } else {
+            toast.info(`No doctors found in your detected country ${userLocation.countryCode}. Searching globally for closest.`);
+            // No change to doctorsToSearch here, it remains all doctors
+        }
+    } else {
+        toast.info('No country filter applied for closest doctor search. Searching globally.');
+    }
+
 
     if (doctorsToSearch.length === 0) {
-      toast.info('No doctors found in the selected country to calculate the closest one.');
+      toast.info('No doctors available to calculate the closest one.');
       setClosestDoctor(null);
       setIsFindingClosestDoctor(false);
       return;
     }
 
     doctorsToSearch.forEach(doc => {
-      if (doc.latitude !== null && doc.longitude !== null && userLocation) {
+      // Use doctor's precise coordinates if available, otherwise fallback to country center
+      const docLat = doc.latitude !== null ? doc.latitude : (COUNTRY_CENTERS[doc.country?.toUpperCase() || '']?.lat || null);
+      const docLng = doc.longitude !== null ? doc.longitude : (COUNTRY_CENTERS[doc.country?.toUpperCase() || '']?.lng || null);
+
+      if (docLat !== null && docLng !== null && userLocation) {
         const distance = haversineDistance(
           userLocation.latitude,
           userLocation.longitude,
-          doc.latitude,
-          doc.longitude
+          docLat,
+          docLng
         );
         if (distance < minDistance) {
           minDistance = distance;
@@ -412,18 +502,27 @@ export default function FindDoctorsPage() {
       const map = mapInstanceRef.current;
       const newBounds = new window.google.maps.LatLngBounds();
       newBounds.extend({ lat: userLocation.latitude, lng: userLocation.longitude });
-      newBounds.extend({ lat: closest.latitude, lng: closest.longitude });
-      map.fitBounds(newBounds);
+      
+      // Ensure the closest doctor's location is added correctly (using fallback if needed)
+      const closestDocLat = closest.latitude !== null ? closest.latitude : (COUNTRY_CENTERS[closest.country?.toUpperCase() || '']?.lat || null);
+      const closestDocLng = closest.longitude !== null ? closest.longitude : (COUNTRY_CENTERS[closest.country?.toUpperCase() || '']?.lng || null);
 
-      google.maps.event.addListenerOnce(map, 'idle', () => {
-        const currentZoom = map.getZoom();
-        if (currentZoom !== undefined && currentZoom > 15) {
-          map.setZoom(15);
-        }
-      });
+      if (closestDocLat !== null && closestDocLng !== null) {
+        newBounds.extend({ lat: closestDocLat, lng: closestDocLng });
+      }
+
+      if (!newBounds.isEmpty()) {
+        map.fitBounds(newBounds);
+        google.maps.event.addListenerOnce(map, 'idle', () => {
+          const currentZoom = map.getZoom();
+          if (currentZoom !== undefined && currentZoom > 15) {
+            map.setZoom(15);
+          }
+        });
+      }
 
       toast.success(`Closest doctor found: ${closest.user_name || 'Doctor'} (${minDistance.toFixed(2)} km away)`);
-      setActiveInfoWindow(closest); // Open info window for closest doctor
+      setActiveInfoWindow(closest);
     } else if (closest) {
       toast.success(`Closest doctor found: ${closest.user_name || 'Doctor'}`);
     } else {
@@ -434,11 +533,13 @@ export default function FindDoctorsPage() {
 
   const handleCountryChange = useCallback((value: string | null) => {
     setSelectedCountry(value);
-    setClosestDoctor(null); // Reset closest doctor when country filter changes
-    setActiveInfoWindow(null); // Close any open info window when country filter changes
+    setClosestDoctor(null);
+    setActiveInfoWindow(null);
     if (mapInstanceRef.current) {
-      const filteredDoctors = value ? doctors.filter(doc => doc.country === value) : doctors;
-      updateMapBoundsAndCenter(mapInstanceRef.current, filteredDoctors, userLocation, value);
+        // When manual country changes, the main useEffect will re-evaluate and call updateMapBoundsAndCenter.
+        // We just need to trigger a re-render by changing selectedCountry.
+        // The updateMapBoundsAndCenter will use `value` as `effectiveCountryFilter`.
+        updateMapBoundsAndCenter(mapInstanceRef.current, doctors, userLocation, value);
     }
   }, [doctors, userLocation, updateMapBoundsAndCenter]);
 
@@ -468,9 +569,8 @@ export default function FindDoctorsPage() {
     return (
       <GoogleMap
         mapContainerStyle={mapContainerStyle}
-        // Use dynamic mapCenter and mapZoom
-        center={mapCenter}
-        zoom={mapZoom}
+        center={actualMapCenter} // Uses derived center
+        zoom={actualMapZoom}     // Uses derived zoom
         options={mapOptions}
         onLoad={onMapLoad}
         onUnmount={onMapUnmount}
@@ -488,27 +588,39 @@ export default function FindDoctorsPage() {
         )}
 
         {/* Doctor Markers */}
-        {doctors
-          .filter(doc => (selectedCountry ? doc.country === selectedCountry : true))
-          .map(doc => (
-            doc.latitude !== null && doc.longitude !== null && (
-              <Marker
-                key={doc.id}
-                position={{ lat: doc.latitude, lng: doc.longitude }}
-                title={doc.user_name || 'Doctor'}
-                onClick={() => setActiveInfoWindow(doc)}
-                icon={{
-                  url: closestDoctor?.id === doc.id ? 'http://maps.google.com/mapfiles/ms/icons/green-dot.png' : 'http://maps.google.com/mapfiles/ms/icons/red-dot.png', // Green for closest, red for others
-                  scaledSize: new window.google.maps.Size(32, 32)
-                }}
-              />
-            )
-          ))}
+        {/* All doctors are rendered here. Their position is determined by lat/long or country center fallback. */}
+        {doctors.map(doc => {
+            // Determine marker position: Use doctor's precise coordinates if available,
+            // otherwise fallback to country center if country is known.
+            const markerLat = doc.latitude !== null ? doc.latitude : (COUNTRY_CENTERS[doc.country?.toUpperCase() || '']?.lat || null);
+            const markerLng = doc.longitude !== null ? doc.longitude : (COUNTRY_CENTERS[doc.country?.toUpperCase() || '']?.lng || null);
+
+            if (markerLat !== null && markerLng !== null) {
+                return (
+                    <Marker
+                        key={doc.id}
+                        position={{ lat: markerLat, lng: markerLng }}
+                        title={doc.user_name || 'Doctor'}
+                        onClick={() => setActiveInfoWindow(doc)}
+                        icon={{
+                            url: closestDoctor?.id === doc.id ? 'http://maps.google.com/mapfiles/ms/icons/green-dot.png' : 'http://maps.google.com/mapfiles/ms/icons/red-dot.png', // Green for closest, red for others
+                            scaledSize: new window.google.maps.Size(32, 32)
+                        }}
+                    />
+                );
+            }
+            return null; // Don't render marker if no valid position
+        })}
 
         {/* Info Window */}
-        {activeInfoWindow && activeInfoWindow.latitude !== null && activeInfoWindow.longitude !== null && (
+        {activeInfoWindow && (activeInfoWindow.latitude !== null || COUNTRY_CENTERS[activeInfoWindow.country?.toUpperCase() || '']) && (
           <InfoWindow
-            position={{ lat: activeInfoWindow.latitude, lng: activeInfoWindow.longitude }}
+            // Position for InfoWindow should ideally be the precise lat/long if available,
+            // otherwise use the fallback country center used for the marker.
+            position={{ 
+                lat: activeInfoWindow.latitude !== null ? activeInfoWindow.latitude : (COUNTRY_CENTERS[activeInfoWindow.country?.toUpperCase() || '']?.lat || 0),
+                lng: activeInfoWindow.longitude !== null ? activeInfoWindow.longitude : (COUNTRY_CENTERS[activeInfoWindow.country?.toUpperCase() || '']?.lng || 0)
+            }}
             onCloseClick={() => setActiveInfoWindow(null)}
           >
             <div className="p-3 flex flex-col space-y-1 text-gray-800 font-sans min-w-[200px] max-w-[300px]">
@@ -536,7 +648,6 @@ export default function FindDoctorsPage() {
                   {activeInfoWindow.country || ''}
                 </p>
               )}
-              {/* ALWAYS SHOW PHONE NUMBER, prioritizing office_phone if available */}
               {(activeInfoWindow.phone || activeInfoWindow.office_phone) && (
                 <p className="text-sm text-gray-600 flex items-center justify-center">
                   <FaPhoneAlt className="mr-1 text-gray-500" />
@@ -609,21 +720,7 @@ export default function FindDoctorsPage() {
 
           {/* Find Closest Doctor Button */}
           <div className="flex flex-col justify-end">
-            <Button
-              onClick={findClosestDoctor}
-              // Disable if user location not granted, no doctors, or currently loading
-              disabled={!userLocation || userLocation.permissionStatus !== 'granted' || doctors.length === 0 || loadingDoctors || isFindingClosestDoctor}
-              className="w-full h-12 rounded-xl text-white transition-all duration-300 transform hover:-translate-y-0.5 shadow-md hover:shadow-lg flex items-center justify-center text-base font-semibold"
-              isLoading={isFindingClosestDoctor}
-              style={{
-                backgroundColor: DEFAULT_PRESET_COLORS.default,
-                color: DEFAULT_PRESET_COLORS.foreground,
-              }}
-              onMouseOver={(e) => e.currentTarget.style.backgroundColor = DEFAULT_PRESET_COLORS.dark}
-              onMouseOut={(e) => e.currentTarget.style.backgroundColor = DEFAULT_PRESET_COLORS.default}
-            >
-              <FaSearchLocation className="mr-2" /> Find Closest Doctor
-            </Button>
+            
           </div>
         </div>
 
@@ -673,7 +770,32 @@ export default function FindDoctorsPage() {
           >
             <FaMapMarkerAlt className="mr-4 text-2xl flex-shrink-0" style={{ color: DEFAULT_PRESET_COLORS.default }} />
             <div>
-              
+              <h2 className="font-bold text-xl mb-2">Your Detected Location:</h2>
+              {loadingUserLocation ? (
+                <p className="text-base flex items-center">
+                  <svg className="animate-spin h-4 w-4 mr-2" style={{ color: DEFAULT_PRESET_COLORS.default }} viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                  Detecting coordinates and permission status...
+                </p>
+              ) : (
+                <>
+                  <p className="text-base">Latitude: <span className="font-mono">{userLocation.latitude.toFixed(6)}</span></p>
+                  <p className="text-base">Longitude: <span className="font-mono">{userLocation.longitude.toFixed(6)}</span></p>
+                  {userLocation.countryCode && <p className="text-base">Country: <span className="font-mono">{userLocation.countryCode}</span></p>}
+                  {userLocation.permissionStatus === 'denied' && (
+                    <p className="text-sm mt-2 text-red-600 flex items-center">
+                      <FaInfoCircle className="mr-1" /> Location access denied. Please enable it in your browser settings.
+                    </p>
+                  )}
+                  {userLocation.permissionStatus === 'prompt' && (
+                    <p className="text-sm mt-2 text-blue-700 flex items-center">
+                      <FaInfoCircle className="mr-1" /> Please grant location permission when prompted by your browser.
+                    </p>
+                  )}
+                </>
+              )}
               <p className="text-sm mt-2" style={{ color: DEFAULT_PRESET_COLORS.dark }}>Your location is marked with a blue dot on the map.</p>
             </div>
           </div>
@@ -694,10 +816,9 @@ export default function FindDoctorsPage() {
               {closestDoctor.speciality && <p className="text-sm mb-1">Speciality: {closestDoctor.speciality}</p>}
               <p className="text-base mb-1">Country: {closestDoctor.country}</p>
               {closestDoctor.address && <p className="text-base mb-1">Address: {closestDoctor.address}{closestDoctor.city ? `, ${closestDoctor.city}` : ''}</p>}
-              {/* Prioritize office_phone for display if available */}
               {(closestDoctor.office_phone || closestDoctor.phone) && <p className="text-base mb-1">Phone: <a href={`tel:${closestDoctor.office_phone || closestDoctor.phone}`} className="hover:underline" style={{ color: DEFAULT_PRESET_COLORS.dark }}>{closestDoctor.office_phone || closestDoctor.phone}</a></p>}
               {closestDoctor.email && <p className="text-base mb-1">Email: <a href={`mailto:${closestDoctor.email}`} className="hover:underline" style={{ color: DEFAULT_PRESET_COLORS.dark }}>{closestDoctor.email}</a></p>}
-              <p className="text-xs text-gray-500 mt-2">Lat: {closestDoctor.latitude.toFixed(6)}, Lng: {closestDoctor.longitude.toFixed(6)}</p>
+              <p className="text-xs text-gray-500 mt-2">Lat: {closestDoctor.latitude?.toFixed(6) || 'N/A'}, Lng: {closestDoctor.longitude?.toFixed(6) || 'N/A'}</p>
             </div>
           </div>
         )}
@@ -719,6 +840,8 @@ export default function FindDoctorsPage() {
           </div>
         )}
       </div>
+      {/* Add Toaster component at the root of your app or a high-level layout */}
+      <Toaster /> 
     </div>
   );
 }
