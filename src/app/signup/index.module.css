@@ -1,0 +1,87 @@
+/* SignUpForm.module.css */
+.formLayout {
+    display: grid;
+    gap: 16px;
+    margin-top: 20px;
+}
+
+.doubleColumn {
+    grid-template-columns: repeat(2, 1fr);
+}
+
+.singleColumn {
+    grid-template-columns: 1fr;
+}
+
+.inputField {
+    padding: 8px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    font-size: 16px;
+}
+
+.countrySelector {
+    padding: 8px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    font-size: 16px;
+    width: 100%;
+}
+
+.phoneInput {
+    margin-top: 8px;
+    border-radius: 4px;
+    border: 1px solid #ccc;
+}
+
+.selectField {
+    margin-top: 8px;
+    padding: 8px;
+    background-color: white;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+}
+
+.uploadField {
+    margin-top: 8px;
+    padding: 8px;
+    border: 1px dashed #ccc;
+    background-color: #f9f9f9;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.checkbox {
+    display: flex;
+    align-items: center;
+    margin-top: 8px;
+}
+
+.submitButton {
+    margin-top: 16px;
+    background-color: #007BFF;
+    color: white;
+    font-weight: bold;
+    padding: 12px 24px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.submitButton:hover {
+    background-color: #0056b3;
+}
+
+.submitButton:disabled {
+    background-color: #ccc;
+}
+
+@media (max-width: 768px) {
+    .doubleColumn, .singleColumn {
+        grid-template-columns: 1fr;
+    }
+}

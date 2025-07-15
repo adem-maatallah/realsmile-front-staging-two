@@ -1,0 +1,15 @@
+.custom-modal-content {
+    max-height: 500px;
+    /* Adjust based on your needs */
+    overflow-y: auto;
+    /* Allows scrolling within the modal if needed */
+}
+
+.custom-modal {
+    overflow: visible !important;
+}
+
+.phone-input-dropdown {
+    z-index: 1050;
+    /* Higher than the modal */
+}
