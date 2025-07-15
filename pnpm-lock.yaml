@@ -8,6 +8,9 @@ importers:
 
   .:
     dependencies:
+      '@api.video/react-player':
+        specifier: ^1.1.0
+        version: 1.1.0(react@18.2.0)
       '@dnd-kit/core':
         specifier: ^6.2.0
         version: 6.3.1(react-dom@18.2.0(react@18.2.0))(react@18.2.0)
@@ -24,8 +27,8 @@ importers:
         specifier: ^7.14.0
         version: 7.14.0(encoding@0.1.13)
       '@googlemaps/js-api-loader':
-        specifier: ^1.16.8
-        version: 1.16.8
+        specifier: ^1.16.10
+        version: 1.16.10
       '@headlessui/react':
         specifier: ^2.2.0
         version: 2.2.0(react-dom@18.2.0(react@18.2.0))(react@18.2.0)
@@ -507,6 +510,14 @@ packages:
   '@antfu/ni@0.21.12':
     resolution: {integrity: sha512-2aDL3WUv8hMJb2L3r/PIQWsTLyq7RQr3v9xD16fiz6O8ys1xEyLhhTOv8gxtZvJiTzjTF5pHoArvRdesGL1DMQ==}
     hasBin: true
+
+  '@api.video/player-sdk@1.2.33':
+    resolution: {integrity: sha512-v646Da9WiGXFDI33S16KpK+23Ut6i6fsr5R1oG0Q+98h4pcSJq0tj7FYw9iF1Qr8bRxXppFQuS0nBvns/CGzbg==}
+
+  '@api.video/react-player@1.1.0':
+    resolution: {integrity: sha512-ZJDbcBoRukL5FdH0gEJe7p2zH/cyEoAWMnJ7ocXoC2GFjldjzFd/KIRIYMStXoUmKlqa4SOPWJXn7kmbzei7fQ==}
+    peerDependencies:
+      react: '>=16.6.0'
 
   '@axiomhq/js@1.0.0-rc.3':
     resolution: {integrity: sha512-Zm10TczcMLounWqC42nMkXQ7XKLqjzLrd5ia022oBKDUZqAFVg2y9d1quQVNV4FlXyg9MKDdfMjpKQRmzEGaog==}
@@ -1272,8 +1283,8 @@ packages:
     resolution: {integrity: sha512-H41bPL2cMfSi4EEnFzKvg7XSb7T67ocSXrmF7MPjfgFB0L6CKGzfIYJheAZi1iqXjz6XaCT1OBf6HCG5vDBTOQ==}
     engines: {node: '>=14'}
 
-  '@googlemaps/js-api-loader@1.16.8':
-    resolution: {integrity: sha512-CROqqwfKotdO6EBjZO/gQGVTbeDps5V7Mt9+8+5Q+jTg5CRMi3Ii/L9PmV3USROrt2uWxtGzJHORmByxyo9pSQ==}
+  '@googlemaps/js-api-loader@1.16.10':
+    resolution: {integrity: sha512-c2erv2k7P2ilYzMmtYcMgAR21AULosQuUHJbStnrvRk2dG93k5cqptDrh9A8p+ZNlyhiqEOgHW7N9PAizdUM7Q==}
 
   '@grpc/grpc-js@1.9.15':
     resolution: {integrity: sha512-nqE7Hc0AzI+euzUwDAy0aY5hCp10r734gMGRdU+qOPX0XSceI2ULrcXB5U2xSc5VkWwalCj4M7GzCAygZl2KoQ==}
@@ -4549,7 +4560,7 @@ packages:
     resolution: {integrity: sha512-oWb1Z6mkHIskLzEJ/XWX0srkpkTQ7vaopMQkyaEIoq0fmtFVxOthb8cCxeT+p3ynTdkk/RZwbgG4brR5BeWECw==}
     engines: {node: '>= 4.0'}
     os: [darwin]
-    deprecated: Upgrade to fsevents v2 to mitigate potential security issues
+    deprecated: The v1 package contains DANGEROUS / INSECURE binaries. Upgrade to safe fsevents v2
 
   fsevents@2.3.2:
     resolution: {integrity: sha512-xiqMQR4xAeHTuB9uWm+fFRcIOgKBMiOBP+eXiyT7jsgVCq1bkVygt00oASowB7EdtpOHaaPgKt812P9ab+DDKA==}
@@ -8014,6 +8025,9 @@ packages:
     resolution: {integrity: sha512-Am1ousAhSLBeB9cG/7k7r2R0zj50uDRlZHPGbazid5s9rlF1F/QKYObEKSIunSjIOkJZqwRRLpvewjEkM7pSqg==}
     deprecated: Please see https://github.com/lydell/urix#deprecated
 
+  url-polyfill@1.1.13:
+    resolution: {integrity: sha512-tXzkojrv2SujumYthZ/WjF7jaSfNhSXlYMpE5AYdL2I3D7DCeo+mch8KtW2rUuKjDg+3VXODXHVgipt8yGY/eQ==}
+
   url@0.11.4:
     resolution: {integrity: sha512-oCwdVC7mTuWiPyjLUz/COz5TLk6wgp0RCsN+wHZ2Ekneac9w8uuV0njcbbie2ME+Vs+d6duwmYuR3HgQXs1fOg==}
     engines: {node: '>= 0.4'}
@@ -8454,6 +8468,16 @@ snapshots:
       throttle-debounce: 5.0.2
 
   '@antfu/ni@0.21.12': {}
+
+  '@api.video/player-sdk@1.2.33':
+    dependencies:
+      core-js: 3.39.0
+      url-polyfill: 1.1.13
+
+  '@api.video/react-player@1.1.0(react@18.2.0)':
+    dependencies:
+      '@api.video/player-sdk': 1.2.33
+      react: 18.2.0
 
   '@axiomhq/js@1.0.0-rc.3':
     dependencies:
@@ -9323,7 +9347,7 @@ snapshots:
       - encoding
       - supports-color
 
-  '@googlemaps/js-api-loader@1.16.8': {}
+  '@googlemaps/js-api-loader@1.16.10': {}
 
   '@grpc/grpc-js@1.9.15':
     dependencies:
@@ -11803,8 +11827,7 @@ snapshots:
 
   core-js@1.2.7: {}
 
-  core-js@3.39.0:
-    optional: true
+  core-js@3.39.0: {}
 
   core-util-is@1.0.3: {}
 
@@ -12524,7 +12547,7 @@ snapshots:
       eslint: 8.57.0
       eslint-import-resolver-node: 0.3.9
       eslint-import-resolver-typescript: 3.7.0(eslint-plugin-import@2.31.0(eslint@8.57.0))(eslint@8.57.0)
-      eslint-plugin-import: 2.31.0(@typescript-eslint/parser@6.21.0(eslint@8.57.0)(typescript@5.4.2))(eslint-import-resolver-typescript@3.7.0(eslint-plugin-import@2.31.0(eslint@8.57.0))(eslint@8.57.0))(eslint@8.57.0)
+      eslint-plugin-import: 2.31.0(@typescript-eslint/parser@6.21.0(eslint@8.57.0)(typescript@5.4.2))(eslint-import-resolver-typescript@3.7.0)(eslint@8.57.0)
       eslint-plugin-jsx-a11y: 6.10.2(eslint@8.57.0)
       eslint-plugin-react: 7.37.3(eslint@8.57.0)
       eslint-plugin-react-hooks: 5.0.0-canary-7118f5dd7-20230705(eslint@8.57.0)
@@ -12564,7 +12587,7 @@ snapshots:
       is-glob: 4.0.3
       stable-hash: 0.0.4
     optionalDependencies:
-      eslint-plugin-import: 2.31.0(@typescript-eslint/parser@6.21.0(eslint@8.57.0)(typescript@5.4.2))(eslint-import-resolver-typescript@3.7.0(eslint-plugin-import@2.31.0(eslint@8.57.0))(eslint@8.57.0))(eslint@8.57.0)
+      eslint-plugin-import: 2.31.0(@typescript-eslint/parser@6.21.0(eslint@8.57.0)(typescript@5.4.2))(eslint-import-resolver-typescript@3.7.0)(eslint@8.57.0)
     transitivePeerDependencies:
       - supports-color
 
@@ -12579,7 +12602,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  eslint-plugin-import@2.31.0(@typescript-eslint/parser@6.21.0(eslint@8.57.0)(typescript@5.4.2))(eslint-import-resolver-typescript@3.7.0(eslint-plugin-import@2.31.0(eslint@8.57.0))(eslint@8.57.0))(eslint@8.57.0):
+  eslint-plugin-import@2.31.0(@typescript-eslint/parser@6.21.0(eslint@8.57.0)(typescript@5.4.2))(eslint-import-resolver-typescript@3.7.0)(eslint@8.57.0):
     dependencies:
       '@rtsao/scc': 1.1.0
       array-includes: 3.1.8
@@ -15742,12 +15765,13 @@ snapshots:
 
   realsmilealigners@file:(@babel/core@7.26.0)(@emotion/is-prop-valid@1.3.1)(@swc/helpers@0.5.15)(@types/react@18.3.18)(@types/three@0.171.0)(csstype@3.1.3)(encoding@0.1.13)(luxon@3.5.0)(sass@1.83.0)(tailwindcss@3.4.17)(use-sync-external-store@1.4.0(react@18.2.0)):
     dependencies:
+      '@api.video/react-player': 1.1.0(react@18.2.0)
       '@dnd-kit/core': 6.3.1(react-dom@18.2.0(react@18.2.0))(react@18.2.0)
       '@dnd-kit/sortable': 8.0.0(@dnd-kit/core@6.3.1(react-dom@18.2.0(react@18.2.0))(react@18.2.0))(react@18.2.0)
       '@dnd-kit/utilities': 3.2.2(react@18.2.0)
       '@floating-ui/react': 0.26.28(react-dom@18.2.0(react@18.2.0))(react@18.2.0)
       '@google-cloud/storage': 7.14.0(encoding@0.1.13)
-      '@googlemaps/js-api-loader': 1.16.8
+      '@googlemaps/js-api-loader': 1.16.10
       '@headlessui/react': 2.2.0(react-dom@18.2.0(react@18.2.0))(react@18.2.0)
       '@heroicons/react': 2.2.0(react@18.2.0)
       '@img-comparison-slider/react': 8.0.2
@@ -17184,6 +17208,8 @@ snapshots:
 
   urix@0.1.0:
     optional: true
+
+  url-polyfill@1.1.13: {}
 
   url@0.11.4:
     dependencies:

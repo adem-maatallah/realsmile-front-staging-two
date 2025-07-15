@@ -44,6 +44,7 @@ export const routes = {
   },
 
   createPatient: '/patients/create',
+  home: '/accueil', // Set your main home page to '/accueil'
 
   reatainingGutters: {
     create: '/retaining-gutters/create',
@@ -96,6 +97,7 @@ export const routes = {
     list: '/doctors',
     alerts: (id: any) => `/${id}`,
   },
+  
   createCase: '/cases/create',
   onyxceph: '/onyxceph',
   searchAndFilter: {
