@@ -2,9 +2,9 @@
 importScripts('https://www.gstatic.com/firebasejs/8.8.0/firebase-app.js');
 // eslint-disable-next-line no-undef
 importScripts('https://www.gstatic.com/firebasejs/8.8.0/firebase-messaging.js');
-
+api_key= process.env.Firebase_config_token
 const firebaseConfig = {
-    apiKey: "AIzaSyBVPsFjsPmr_G0Y6y-d2IdADg189iba6FI",
+    apiKey: api_key,
     authDomain: "realsmileappss.firebaseapp.com",
     projectId: "realsmileappss",
     storageBucket: "realsmileappss.appspot.com",

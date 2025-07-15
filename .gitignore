@@ -4,7 +4,7 @@
 /node_modules
 /.pnp
 .pnp.js
-
+/service-account.json
 # testing
 /coverage
 service-account.json
@@ -48,6 +48,6 @@ next-env.d.ts
 /playwright-report/
 /playwright/.cache/
 
-
+service-accounts.json
 # Million Lint
 .million
