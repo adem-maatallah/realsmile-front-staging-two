@@ -56,10 +56,8 @@ export default function OtherPagesLayout({
 
   return (
     <div
-      className="flex min-h-screen flex-col"
-      style={{
-        background: `linear-gradient(to bottom right, ${DEFAULT_PRESET_COLORS.lighter}, ${DEFAULT_PRESET_COLORS.light})`,
-      }}
+      className="flex min-h-screen flex-col bg-white"
+
     >
       <header
         className={cn(

@@ -1,4 +1,3 @@
-// app/find-doctors/page.tsx
 'use client';
 
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
@@ -48,7 +47,7 @@ interface UserLocation {
 
 // --- Environment Variables ---
 const BACKEND_API_BASE_URL = process.env.NEXT_PUBLIC_API_URL;
-const GOOGLE_MAPS_API_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY; // Corrected env variable name
+const Maps_API_KEY = process.env.NEXT_PUBLIC_Maps_API_KEY; // Corrected env variable name
 
 // --- Haversine Formula ---
 function haversineDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
@@ -66,8 +65,8 @@ function haversineDistance(lat1: number, lon1: number, lat2: number, lon2: numbe
 
 // --- Map Constants ---
 const mapContainerStyle = {
-    width: '100%',
-    height: '600px',
+    width: '80%', // Reduced width
+    height: '400px', // Reduced height
     borderRadius: '1rem',
     boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)',
 };
@@ -97,8 +96,8 @@ export default function FindDoctorsPage() {
     const [loadingDoctors, setLoadingDoctors] = useState(true);
     const [loadingUserLocation, setLoadingUserLocation] = useState(true);
     const [error, setError] = useState<string | null>(null);
-    const [selectedCountry, setSelectedCountry] = useState<string | null>(null); // For manual filter
-    const [availableCountries, setAvailableCountries] = useState<SelectOption[]>([]);
+    // const [selectedCountry, setSelectedCountry] = useState<string | null>(null); // Removed: For manual filter
+    // const [availableCountries, setAvailableCountries] = useState<SelectOption[]>([]); // Removed: For manual filter
     const [activeInfoWindow, setActiveInfoWindow] = useState<DoctorLocation | null>(null);
     const [isFindingClosestDoctor, setIsFindingClosestDoctor] = useState(false);
 
@@ -121,7 +120,7 @@ export default function FindDoctorsPage() {
 
     const { isLoaded, loadError } = useJsApiLoader({
         id: 'google-map-script',
-        googleMapsApiKey: GOOGLE_MAPS_API_KEY as string, // Use GOOGLE_MAPS_API_KEY
+        googleMapsApiKey: Maps_API_KEY as string, // Use Maps_API_KEY
         libraries: mapLibraries,
         language: 'en',
         region: 'TN',
@@ -166,7 +165,7 @@ export default function FindDoctorsPage() {
         map: google.maps.Map,
         currentDoctors: DoctorLocation[],
         currentUserLocation: UserLocation | null,
-        effectiveCountryFilter: string | null,
+        // effectiveCountryFilter: string | null, // Removed
         shouldFitAllDoctors: boolean = true // New parameter: if true, fits all doctors; if false, only user+closest
     ) => {
         if (!map || !window.google || !window.google.maps) {
@@ -180,16 +179,16 @@ export default function FindDoctorsPage() {
         // Only add doctors to bounds if shouldFitAllDoctors is true
         if (shouldFitAllDoctors) {
             let doctorsForBounds = currentDoctors;
-            if (effectiveCountryFilter) {
-                const filteredByCountry = currentDoctors.filter(doc => doc.country && doc.country.toUpperCase() === effectiveCountryFilter.toUpperCase());
-                if (filteredByCountry.length > 0) {
-                    doctorsForBounds = filteredByCountry;
-                } else {
-                    console.log(`No doctors found for bounds in ${effectiveCountryFilter}. Using all doctors.`);
-                    doctorsForBounds = currentDoctors;
-                }
-            }
-            
+            // if (effectiveCountryFilter) { // Removed country filter logic
+            //     const filteredByCountry = currentDoctors.filter(doc => doc.country && doc.country.toUpperCase() === effectiveCountryFilter.toUpperCase());
+            //     if (filteredByCountry.length > 0) {
+            //         doctorsForBounds = filteredByCountry;
+            //     } else {
+            //         console.log(`No doctors found for bounds in ${effectiveCountryFilter}. Using all doctors.`);
+            //         doctorsForBounds = currentDoctors;
+            //     }
+            // }
+
             doctorsForBounds.forEach(doc => {
                 const docLat = doc.latitude !== null ? doc.latitude : (COUNTRY_CENTERS[doc.country?.toUpperCase() || '']?.lat || null);
                 const docLng = doc.longitude !== null ? doc.longitude : (COUNTRY_CENTERS[doc.country?.toUpperCase() || '']?.lng || null);
@@ -233,9 +232,9 @@ export default function FindDoctorsPage() {
         // Initial centering on user is handled by mapCenter/mapZoom props.
         // We might want to fit all doctors initially if no user location is available.
         if (!userLocation || userLocation.permissionStatus !== 'granted') {
-             updateMapBoundsAndCenter(map, doctors, userLocation, selectedCountry, true);
+            updateMapBoundsAndCenter(map, doctors, userLocation, true);
         }
-    }, [doctors, userLocation, selectedCountry, updateMapBoundsAndCenter]);
+    }, [doctors, userLocation, updateMapBoundsAndCenter]);
 
 
     const onMapUnmount = useCallback(() => {
@@ -270,20 +269,21 @@ export default function FindDoctorsPage() {
                 setError(null);
                 // Use axiosInstance for fetching doctor locations
                 const response = await axiosInstance.get(`${BACKEND_API_BASE_URL}/doctors/locations`); // Corrected API path
-                
+
                 if (response.status !== 200) {
                     throw new Error(response.data?.message || 'Failed to fetch doctor locations.');
                 }
                 const data: DoctorLocation[] = response.data;
                 setDoctors(data);
 
-                const countries = Array.from(new Set(data.map(d => d.country)))
-                    .filter(country => country && country.trim() !== '')
-                    .map(country => ({
-                        label: country,
-                        value: country
-                    }));
-                setAvailableCountries([{ label: 'All Countries', value: '' }, ...countries.sort((a, b) => a.label.localeCompare(b.label))]);
+                // Removed country list population
+                // const countries = Array.from(new Set(data.map(d => d.country)))
+                //     .filter(country => country && country.trim() !== '')
+                //     .map(country => ({
+                //         label: country,
+                //         value: country
+                //     }));
+                // setAvailableCountries([{ label: 'All Countries', value: '' }, ...countries.sort((a, b) => a.label.localeCompare(b.label))]);
 
             } catch (err: any) {
                 console.error('Error fetching doctors:', err);
@@ -386,9 +386,7 @@ export default function FindDoctorsPage() {
         // Add markers to the map whenever doctors or selectedCountry changes
         // This part remains responsible for updating markers on the map
         clearMarkers(); // Clear existing markers before adding new ones
-        const doctorsToDisplayOnMap = selectedCountry
-            ? doctors.filter(doc => doc.country && doc.country.toUpperCase() === selectedCountry.toUpperCase())
-            : doctors;
+        const doctorsToDisplayOnMap = doctors; // No country filter here
 
         doctorsToDisplayOnMap.forEach(doc => {
             const markerLat = doc.latitude !== null ? doc.latitude : (COUNTRY_CENTERS[doc.country?.toUpperCase() || '']?.lat || null);
@@ -458,13 +456,7 @@ export default function FindDoctorsPage() {
             }
         }
 
-    }, [isLoaded, doctors, selectedCountry, closestDoctor, activeInfoWindow, mapInstanceRef, clearMarkers]); // Added activeInfoWindow, mapInstanceRef, clearMarkers
-
-    // Function to clear markers from the map
-    // const clearMarkers = useCallback(() => { // Original position
-    //     markers.current.forEach(marker => marker.setMap(null));
-    //     markers.current = [];
-    // }, []);
+    }, [isLoaded, doctors, closestDoctor, activeInfoWindow, mapInstanceRef, clearMarkers]); // Removed selectedCountry from deps
 
     const findClosestDoctor = useCallback(() => {
         setIsFindingClosestDoctor(true);
@@ -479,27 +471,26 @@ export default function FindDoctorsPage() {
 
         let doctorsToSearch = [...doctors]; // Start with all doctors
 
-        // Apply filtering logic for "Find Closest" button
-        // Priority: Manual filter > User's detected country filter > No filter (search all)
-        if (selectedCountry) {
-            const filteredBySelectedCountry = doctors.filter(doc => doc.country && doc.country.toUpperCase() === selectedCountry.toUpperCase());
-            if (filteredBySelectedCountry.length > 0) {
-                doctorsToSearch = filteredBySelectedCountry;
-                toast.info(`Searching for closest doctor within selected country: ${selectedCountry}.`);
-            } else {
-                toast.info(`No doctors found in selected country ${selectedCountry}. Searching globally for closest.`);
-            }
-        } else if (userLocation.countryCode) { // If no manual filter, try user's detected country
-            const filteredByUserCountry = doctors.filter(doc => doc.country && doc.country.toUpperCase() === userLocation.countryCode.toUpperCase());
-            if (filteredByUserCountry.length > 0) {
-                doctorsToSearch = filteredByUserCountry;
-                toast.info(`Searching for closest doctor within your detected country: ${userLocation.countryCode}.`);
-            } else {
-                toast.info(`No doctors found in your detected country ${userLocation.countryCode}. Searching globally for closest.`);
-            }
-        } else {
-            toast.info('No country filter applied for closest doctor search. Searching globally.');
-        }
+        // Removed country filtering logic for "Find Closest" button
+        // if (selectedCountry) {
+        //     const filteredBySelectedCountry = doctors.filter(doc => doc.country && doc.country.toUpperCase() === selectedCountry.toUpperCase());
+        //     if (filteredBySelectedCountry.length > 0) {
+        //         doctorsToSearch = filteredBySelectedCountry;
+        //         toast.info(`Searching for closest doctor within selected country: ${selectedCountry}.`);
+        //     } else {
+        //         toast.info(`No doctors found in selected country ${selectedCountry}. Searching globally for closest.`);
+        //     }
+        // } else if (userLocation.countryCode) { // If no manual filter, try user's detected country
+        //     const filteredByUserCountry = doctors.filter(doc => doc.country && doc.country.toUpperCase() === userLocation.countryCode.toUpperCase());
+        //     if (filteredByUserCountry.length > 0) {
+        //         doctorsToSearch = filteredByUserCountry;
+        //         toast.info(`Searching for closest doctor within your detected country: ${userLocation.countryCode}.`);
+        //     } else {
+        //         toast.info(`No doctors found in your detected country ${userLocation.countryCode}. Searching globally for closest.`);
+        //     }
+        // } else {
+        //     toast.info('No country filter applied for closest doctor search. Searching globally.');
+        // }
 
 
         if (doctorsToSearch.length === 0) {
@@ -534,7 +525,7 @@ export default function FindDoctorsPage() {
             const map = mapInstanceRef.current;
             const newBounds = new window.google.maps.LatLngBounds();
             newBounds.extend({ lat: userLocation.latitude, lng: userLocation.longitude });
-            
+
             // Ensure the closest doctor's location is added correctly (using fallback if needed)
             const closestDocLat = closest.latitude !== null ? closest.latitude : (COUNTRY_CENTERS[closest.country?.toUpperCase() || '']?.lat || null);
             const closestDocLng = closest.longitude !== null ? closest.longitude : (COUNTRY_CENTERS[closest.country?.toUpperCase() || '']?.lng || null);
@@ -556,27 +547,28 @@ export default function FindDoctorsPage() {
             toast.success(`Closest doctor found: ${closest.user_name || 'Doctor'} (${minDistance.toFixed(2)} km away)`);
             setActiveInfoWindow(closest);
         } else if (closest) {
-             toast.success(`Closest doctor found: ${closest.user_name || 'Doctor'}`);
+            toast.success(`Closest doctor found: ${closest.user_name || 'Doctor'}`);
         } else {
-            toast.info('No doctors found in your vicinity or selected country.');
+            toast.info('No doctors found in your vicinity.');
         }
         setIsFindingClosestDoctor(false);
-    }, [userLocation, doctors, selectedCountry]);
+    }, [userLocation, doctors]); // Removed selectedCountry from deps
 
-    const handleCountryChange = useCallback((value: string | null) => {
-        setSelectedCountry(value);
-        setClosestDoctor(null);
-        setActiveInfoWindow(null);
-        if (mapInstanceRef.current) {
-            const map = mapInstanceRef.current;
-            const countryCenter = value ? COUNTRY_CENTERS[value.toUpperCase()] : initialMapCenter;
-            const zoom = value ? 6 : initialMapZoom; // Zoom in for a country, or default for world
-            map.setCenter(countryCenter);
-            map.setZoom(zoom);
-            // Also fit bounds for doctors in that country if they exist
-            updateMapBoundsAndCenter(map, doctors, userLocation, value, true);
-        }
-    }, [doctors, userLocation, updateMapBoundsAndCenter]);
+    // Removed handleCountryChange
+    // const handleCountryChange = useCallback((value: string | null) => {
+    //     setSelectedCountry(value);
+    //     setClosestDoctor(null);
+    //     setActiveInfoWindow(null);
+    //     if (mapInstanceRef.current) {
+    //         const map = mapInstanceRef.current;
+    //         const countryCenter = value ? COUNTRY_CENTERS[value.toUpperCase()] : initialMapCenter;
+    //         const zoom = value ? 6 : initialMapZoom; // Zoom in for a country, or default for world
+    //         map.setCenter(countryCenter);
+    //         map.setZoom(zoom);
+    //         // Also fit bounds for doctors in that country if they exist
+    //         updateMapBoundsAndCenter(map, doctors, userLocation, value, true);
+    //     }
+    // }, [doctors, userLocation, updateMapBoundsAndCenter]);
 
     const renderMapContent = () => {
         if (loadError) {
@@ -605,7 +597,7 @@ export default function FindDoctorsPage() {
             <GoogleMap
                 mapContainerStyle={mapContainerStyle}
                 center={mapCenter} // Uses derived center
-                zoom={mapZoom}     // Uses derived zoom
+                zoom={mapZoom}      // Uses derived zoom
                 options={mapOptions}
                 onLoad={onMapLoad}
                 onUnmount={onMapUnmount}
@@ -652,7 +644,7 @@ export default function FindDoctorsPage() {
                     <InfoWindow
                         // Position for InfoWindow should ideally be the precise lat/long if available,
                         // otherwise use the fallback country center used for the marker.
-                        position={{ 
+                        position={{
                             lat: activeInfoWindow.latitude !== null ? activeInfoWindow.latitude : (COUNTRY_CENTERS[activeInfoWindow.country?.toUpperCase() || '']?.lat || 0),
                             lng: activeInfoWindow.longitude !== null ? activeInfoWindow.longitude : (COUNTRY_CENTERS[activeInfoWindow.country?.toUpperCase() || '']?.lng || 0)
                         }}
@@ -705,10 +697,7 @@ export default function FindDoctorsPage() {
     };
 
     return (
-        <div className="min-h-screen p-4 sm:p-8 font-inter flex flex-col items-center"
-            style={{
-                background: `linear-gradient(to bottom right, ${DEFAULT_PRESET_COLORS.lighter}, ${DEFAULT_PRESET_COLORS.light})`,
-            }}
+        <div className="min-h-screen p-4 sm:p-8 font-inter flex flex-col items-center bg-white"
         >
             <div className="max-w-7xl w-full mx-auto bg-white rounded-3xl shadow-xl p-6 sm:p-10 border-px border-gray-200">
                 <header className="text-center mb-10">
@@ -722,7 +711,7 @@ export default function FindDoctorsPage() {
                         Find Your <span style={{ color: DEFAULT_PRESET_COLORS.default }}>Perfect Doctor</span>
                     </h1>
                     <p className="text-center text-gray-700 text-xl max-w-3xl mx-auto">
-                        Easily discover top-rated healthcare professionals nearby or in any chosen country.
+                        Easily discover top-rated healthcare professionals nearby.
                         Your health, your choice, simplified.
                     </p>
                 </header>
@@ -737,8 +726,8 @@ export default function FindDoctorsPage() {
                 )}
 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8 items-end">
-                    {/* Country Filter */}
-                    <div>
+                    {/* Removed Country Filter */}
+                    {/* <div>
                         <Text className="block text-gray-700 text-base font-semibold mb-2 flex items-center">
                             <FaGlobe className="mr-2 text-gray-500" /> Filter by Country:
                         </Text>
@@ -751,73 +740,42 @@ export default function FindDoctorsPage() {
                             dropdownClassName="z-50"
                             disabled={loadingDoctors}
                         />
-                    </div>
+                    </div> */}
 
                     {/* User Location and Find Closest Buttons */}
                     <div className="flex flex-col justify-end space-y-3">
-                        <Button
-                            onClick={() => {
-                                setLoadingUserLocation(true); // Reset loading state when manually triggered
-                                // Explicitly call getUserLocation to attempt to get location again
-                                navigator.geolocation.getCurrentPosition(
-                                    (position) => {
-                                        const { latitude, longitude } = position.coords;
-                                        setUserLocation(prev => ({
-                                            ...prev!,
-                                            latitude,
-                                            longitude,
-                                            formattedAddress: null,
-                                            permissionStatus: 'granted'
-                                        }));
-                                        setLoadingUserLocation(false);
-                                        setError(null);
-                                        reverseGeocodeUserLocation(latitude, longitude);
-                                        // After getting user location, center map on it
-                                        if (mapInstanceRef.current) {
-                                            mapInstanceRef.current.setCenter({ lat: latitude, lng: longitude });
-                                            mapInstanceRef.current.setZoom(14);
-                                        }
-                                    },
-                                    (geoError) => {
-                                        setLoadingUserLocation(false);
-                                        let errorMessage = 'Failed to get your location.';
-                                        switch (geoError.code) {
-                                            case geoError.PERMISSION_DENIED:
-                                                errorMessage = 'Location access denied. Please enable it in browser settings.';
-                                                break;
-                                            case geoError.POSITION_UNAVAILABLE:
-                                                errorMessage = 'Location information is unavailable.';
-                                                break;
-                                            case geoError.TIMEOUT:
-                                                errorMessage = 'The request to get user location timed out.';
-                                                break;
-                                            default:
-                                                errorMessage = `An unknown error occurred: ${geoError.message}`;
-                                                break;
-                                        }
-                                        setError(errorMessage);
-                                        toast.error(errorMessage);
-                                        console.error('Geolocation Error:', geoError);
-                                        setUserLocation(prev => ({ ...prev!, permissionStatus: 'denied', countryCode: null }));
-                                    },
-                                    { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 }
-                                );
-                            }}
-                            disabled={loadingUserLocation || isFindingClosestDoctor}
-                            className="w-full py-3 px-6 rounded-lg bg-blue-500 text-white hover:bg-blue-600 transition-colors shadow-md"
-                            isLoading={loadingUserLocation}
-                        >
-                            <FaMapMarkerAlt className="mr-2" />
-                            {loadingUserLocation ? 'Detecting Location...' : 'Detect My Location'}
-                        </Button>
+                        {/* The "Find Closest Doctor" button should remain */}
                         <Button
                             onClick={findClosestDoctor}
-                            disabled={!userLocation || doctors.length === 0 || isFindingClosestDoctor || userLocation.permissionStatus !== 'granted'}
-                            className="w-full py-3 px-6 rounded-lg bg-green-500 text-white hover:bg-green-600 transition-colors shadow-md"
-                            isLoading={isFindingClosestDoctor}
+                            disabled={loadingUserLocation || loadingDoctors || isFindingClosestDoctor}
+                            className="w-full h-12 flex items-center justify-center text-white font-semibold rounded-lg shadow-md transition duration-300 ease-in-out transform hover:scale-105 active:scale-95 focus:outline-none focus:ring-2 focus:ring-offset-2"
+                            style={{
+                                backgroundColor: DEFAULT_PRESET_COLORS.default,
+                                borderColor: DEFAULT_PRESET_COLORS.dark,
+                                '&:hover': {
+                                    backgroundColor: DEFAULT_PRESET_COLORS.dark,
+                                },
+                                '&:active': {
+                                    backgroundColor: DEFAULT_PRESET_COLORS.dark,
+                                },
+                                '&:focus': {
+                                    borderColor: DEFAULT_PRESET_COLORS.dark,
+                                }
+                            }}
                         >
-                            <FaSearchLocation className="mr-2" />
-                            Find Closest Doctor
+                            {isFindingClosestDoctor ? (
+                                <>
+                                    <svg className="animate-spin h-5 w-5 mr-3 text-white" viewBox="0 0 24 24">
+                                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                    </svg>
+                                    Finding Closest...
+                                </>
+                            ) : (
+                                <>
+                                    <FaSearchLocation className="mr-2" /> Find Closest Doctor
+                                </>
+                            )}
                         </Button>
                     </div>
                 </div>
@@ -889,7 +847,7 @@ export default function FindDoctorsPage() {
                     </div>
                 )}
 
-                <div className="w-full h-[600px] rounded-xl shadow-lg border border-gray-200 overflow-hidden relative">
+                <div className="w-full h-[400px] rounded-xl shadow-lg border border-gray-200 overflow-hidden relative flex justify-center"> {/* Added flex justify-center to center the map when its width is less than 100% */}
                     {renderMapContent()}
                 </div>
 
@@ -907,7 +865,7 @@ export default function FindDoctorsPage() {
                 )}
             </div>
             {/* Add Toaster component at the root of your app or a high-level layout */}
-            <Toaster /> 
+            <Toaster />
         </div>
     );
 }
