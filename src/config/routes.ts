@@ -180,6 +180,8 @@ doctors: {
     security: '/forms/profile-settings/security',
     personalInformation: '/forms/profile-settings/profile',
     newsletter: '/forms/newsletter',
+    doctorCalendarSettings: '/doctors/settings', // <-- Add this line
+
   },
   emailTemplates: '/email-templates',
   profile: '/profile',
