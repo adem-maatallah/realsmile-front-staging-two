@@ -1,3 +1,5 @@
+// src/app/(other-pages)/find-doctors/page.tsx
+
 'use client';
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Button, Text } from 'rizzui';
@@ -63,7 +65,8 @@ const initialMapCenter = {
 };
 
 const initialMapZoom = 2;
-const mapLibraries: google.maps.Libraries[] = ['places', 'geocoding'];
+// FIX: Corrected type for mapLibraries to be string literals
+const mapLibraries: Array<'places' | 'geocoding'> = ['places', 'geocoding'];
 
 // Country centers (for fallback if specific coordinates are missing)
 const COUNTRY_CENTERS: { [key: string]: { lat: number; lng: number } } = {
@@ -74,7 +77,7 @@ const COUNTRY_CENTERS: { [key: string]: { lat: number; lng: number } } = {
   "ES": { lat: 40.463667, lng: -3.74922 },
 };
 
-// Country Flags (for dropdown display)
+// Country Flags (for dropdown display - but now only used internally for sorting)
 const COUNTRY_FLAGS: { [key: string]: string } = {
   "TN": "🇹🇳 Tunisia",
   "MA": "🇲🇦 Morocco",
@@ -136,23 +139,20 @@ export default function FindDoctorsPage() {
   // Memoized filtered doctors based on selectedSpeciality and selectedCountry
   const filteredDoctors = useMemo(() => {
     return doctors.filter(doc => {
-      const matchesSpeciality = selectedSpeciality ? doc.speciality === selectedSpeciality : true;
-      const matchesCountry = selectedCountry ? doc.country?.toUpperCase() === selectedCountry.toUpperCase() : true;
-      return matchesSpeciality && matchesCountry;
+        const matchesSpeciality = selectedSpeciality ? doc.speciality === selectedSpeciality : true;
+        const matchesCountry = selectedCountry ? doc.country?.toUpperCase() === selectedCountry.toUpperCase() : true;
+        return matchesSpeciality && matchesCountry;
     });
   }, [doctors, selectedSpeciality, selectedCountry]);
 
   // Memoized map center and zoom
   const mapCenter = useMemo(() => {
-    // If closestDoctor is set, prioritize its location for initial map center
     if (closestDoctor && closestDoctor.latitude !== null && closestDoctor.longitude !== null) {
       return { lat: closestDoctor.latitude, lng: closestDoctor.longitude };
     }
-    // If user location is granted, use that
     if (userLocation?.permissionStatus === 'granted' && userLocation.latitude !== undefined && userLocation.longitude !== undefined) {
       return { lat: userLocation.latitude, lng: userLocation.longitude };
     }
-    // If filtered doctors exist, try to center on them
     if (filteredDoctors.length > 0) {
       const validDoctors = filteredDoctors.filter(doc => doc.latitude !== null && doc.longitude !== null);
       if (validDoctors.length > 0) {
@@ -161,28 +161,22 @@ export default function FindDoctorsPage() {
         return { lat: avgLat, lng: avgLng };
       }
     }
-    // Otherwise, use initial global center
     return initialMapCenter;
   }, [closestDoctor, userLocation, filteredDoctors]);
 
   const mapZoom = useMemo(() => {
-    // If closestDoctor is set, zoom in closer
     if (closestDoctor) {
       return 15;
     }
-    // If user location is granted and there are filtered doctors, a mid-level zoom
     if (userLocation?.permissionStatus === 'granted' && filteredDoctors.length > 0) {
       return 10;
     }
-    // If only user location, a bit closer
     if (userLocation?.permissionStatus === 'granted') {
       return 12;
     }
-    // If only filtered doctors, a bit closer than initial
     if (filteredDoctors.length > 0) {
       return 6;
     }
-    // Otherwise, use initial global zoom
     return initialMapZoom;
   }, [closestDoctor, userLocation, filteredDoctors]);
 
@@ -259,7 +253,6 @@ export default function FindDoctorsPage() {
   // Map load and unmount handlers
   const onMapLoad = useCallback((map: google.maps.Map) => {
     mapInstanceRef.current = map;
-    // On initial map load, fit all filtered doctors and user location.
     updateMapBoundsAndCenter(map, filteredDoctors, userLocation);
   }, [filteredDoctors, userLocation, updateMapBoundsAndCenter]);
 
@@ -521,26 +514,17 @@ export default function FindDoctorsPage() {
     return Array.from(specialities).sort();
   }, [doctors]);
 
-  // --- START OF FIX FOR COUNTRY FILTER DISPLAY ---
-  // Extract unique countries for filter dropdown
+  // FIX: Extract unique countries for filter dropdown to show only country codes
   const uniqueCountries = useMemo(() => {
     const countries = new Set<string>();
     doctors.forEach(doc => {
-      // Ensure we only add non-empty country codes
       if (doc.country && doc.country.trim() !== '') {
         countries.add(doc.country.toUpperCase());
       }
     });
-    // Convert Set to Array, then sort by display name
-    return Array.from(countries).sort((a, b) => {
-        // Use COUNTRY_FLAGS for sorting if a friendly name exists, otherwise use the code itself
-        const nameA = COUNTRY_FLAGS[a] || a;
-        const nameB = COUNTRY_FLAGS[b] || b;
-        return nameA.localeCompare(nameB);
-    });
-  }, [doctors]); // Depend on doctors to get all available countries
-
-  // --- END OF FIX FOR COUNTRY FILTER DISPLAY ---
+    // Sort by country code (alphabetically)
+    return Array.from(countries).sort();
+  }, [doctors]);
 
   // Render map content
   const renderMapContent = () => {
@@ -807,19 +791,20 @@ export default function FindDoctorsPage() {
             </div>
             <div className="relative w-full sm:w-1/2 md:w-1/3">
                 <FaGlobe className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-               <select
-    value={selectedCountry}
-    onChange={(e) => setSelectedCountry(e.target.value)}
-    className="block w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-    style={{ backgroundColor: DEFAULT_PRESET_COLORS.lighter, color: DEFAULT_PRESET_COLORS.dark, borderColor: DEFAULT_PRESET_COLORS.light }}
-  >
-    <option value="">Tous les pays</option>
-    {uniqueCountries.map(countryCode => (
-      <option key={countryCode} value={countryCode}>
-        {countryCode} {/* Display exact country code from database */}
-      </option>
-    ))}
-  </select>
+                <select
+                    value={selectedCountry}
+                    onChange={(e) => setSelectedCountry(e.target.value)}
+                    className="block w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                    style={{ backgroundColor: DEFAULT_PRESET_COLORS.lighter, color: DEFAULT_PRESET_COLORS.dark, borderColor: DEFAULT_PRESET_COLORS.light }}
+                >
+                    <option value="">Tous les pays</option>
+                    {/* FIX: Only show country codes in the option text as requested */}
+                    {uniqueCountries.map(countryCode => (
+                        <option key={countryCode} value={countryCode}>
+                            {countryCode} {/* Show only the country code */}
+                        </option>
+                    ))}
+                </select>
             </div>
         </div>
 

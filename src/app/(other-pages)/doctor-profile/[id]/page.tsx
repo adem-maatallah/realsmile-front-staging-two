@@ -1,17 +1,20 @@
+// src/app/(other-pages)/doctor-profile/[id]/page.tsx
+
 'use client';
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useParams } from 'next/navigation';
 import { Button, Text, Input, Textarea } from 'rizzui';
 import toast, { Toaster } from 'react-hot-toast';
-import { FaMapMarkerAlt, FaPhoneAlt, FaEnvelope, FaUserMd, FaGlobe, FaRegAddressCard, FaBuilding, FaPhone, FaUser } from 'react-icons/fa';
+import { FaMapMarkerAlt, FaPhoneAlt, FaEnvelope, FaGlobe, FaRegAddressCard, FaBuilding, FaPhone, FaUser, FaCalendarAlt } from 'react-icons/fa';
 import Image from 'next/image';
-import Link from 'next/link';
 import axiosInstance from '@/utils/axiosInstance';
 
 // Import react-phone-number-input components and styles
 import PhoneInput from 'react-phone-number-input';
-import 'react-phone-number-input/style.css'; // Don't forget to import the CSS!
+import 'react-phone-number-input/style.css';
 
+// Import Google Maps components
+import { GoogleMap, useJsApiLoader, Marker } from '@react-google-maps/api';
 
 // Color configuration
 export const DEFAULT_PRESET_COLORS = {
@@ -24,6 +27,7 @@ export const DEFAULT_PRESET_COLORS = {
 
 // Backend API Base URL
 const BACKEND_API_BASE_URL = process.env.NEXT_PUBLIC_API_URL;
+const Maps_API_KEY = process.env.NEXT_PUBLIC_Maps_API_KEY;
 
 // Doctor Details Interface
 interface DoctorDetails {
@@ -35,8 +39,8 @@ interface DoctorDetails {
   phone?: string;
   profile_pic?: string;
   country?: string;
-  latitude?: number | null;
-  longitude?: number | null;
+  latitude?: number | null; // Can be null or undefined
+  longitude?: number | null; // Can be null or undefined
   speciality?: string;
   address?: string;
   address_2?: string;
@@ -45,26 +49,57 @@ interface DoctorDetails {
   office_phone?: string;
 }
 
+// Map constants for the mini-map
+const miniMapContainerStyle = {
+  width: '100%',
+  height: '250px', // Adjusted height for a mini-map
+  borderRadius: '0.5rem',
+  boxShadow: '0 2px 5px rgba(0, 0, 0, 0.1)',
+};
+const miniMapOptions = {
+  disableDefaultUI: true, // No controls for a mini-map
+  zoomControl: false,
+  streetViewControl: false,
+  mapTypeControl: false,
+  fullscreenControl: false,
+  scrollwheel: false, // Disable scroll zoom
+  draggable: false,   // Disable dragging
+  styles: [ // Optional: Minimal map styles
+    { featureType: 'poi', stylers: [{ visibility: 'off' }] },
+    { featureType: 'transit', stylers: [{ visibility: 'off' }] },
+  ],
+};
+// Use the same libraries as the main map page for consistency
+const mapLibraries: Array<'places' | 'geocoding'> = ['places', 'geocoding'];
+
+
 // Main DoctorProfilePage Component
 export default function DoctorProfilePage() {
-  // Extract doctor ID from URL parameters
   const params = useParams();
   const doctorId = params.id as string;
 
-  // State for doctor data and loading/error status
   const [doctor, setDoctor] = useState<DoctorDetails | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // State for contact form inputs
   const [clientFirstName, setClientFirstName] = useState('');
   const [clientLastName, setClientLastName] = useState('');
   const [clientEmail, setClientEmail] = useState('');
-  const [clientPhone, setClientPhone] = useState<string | undefined>(undefined); // Changed type to string | undefined for PhoneInput
+  const [clientPhone, setClientPhone] = useState<string | undefined>(undefined);
+  const [consultationDate, setConsultationDate] = useState<string>('');
   const [clientMessage, setClientMessage] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Effect Hook for Fetching Doctor Details
+  // Load Google Maps API for the mini-map
+  // FIX: Use consistent options (id, libraries, language, region) to avoid "Loader must not be called again" error
+  const { isLoaded: isMapLoaded, loadError: mapLoadError } = useJsApiLoader({
+    id: 'google-map-script', // IMPORTANT: Use the same ID as your main FindDoctorsPage or a common ID
+    googleMapsApiKey: Maps_API_KEY as string,
+    libraries: mapLibraries, // Use the same libraries
+    language: 'fr', // Use the same language
+    region: 'TN',   // Use the same region
+  });
+
   useEffect(() => {
     if (!doctorId || typeof doctorId !== 'string') {
       setLoading(false);
@@ -97,16 +132,13 @@ export default function DoctorProfilePage() {
     fetchDoctorDetails();
   }, [doctorId]);
 
-  // Callback Function for Contact Form Submission
   const handleSubmitContactForm = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
     toast.dismiss();
 
-    // Basic client-side validation
-    // PhoneInput handles internal validation; we just need to check if it's present
-    if (!clientFirstName.trim() || !clientLastName.trim() || !clientEmail.trim() || !clientMessage.trim() || !clientPhone) {
-      toast.error("Veuillez remplir tous les champs obligatoires (Prénom, Nom, Email, Téléphone, Message).");
+    if (!clientFirstName.trim() || !clientLastName.trim() || !clientEmail.trim() || !clientPhone || !consultationDate || !clientMessage.trim()) {
+      toast.error("Veuillez remplir tous les champs obligatoires (Prénom, Nom, Email, Téléphone, Date de consultation, Message).");
       setIsSubmitting(false);
       return;
     }
@@ -117,46 +149,54 @@ export default function DoctorProfilePage() {
       return;
     }
 
-    // `react-phone-number-input` provides validation helpers, but for a simple check,
-    // we just ensure it's not empty, as the component itself guides valid input.
-    // If you need more rigorous validation here, import `isValidPhoneNumber` from 'react-phone-number-input'
-    // if (!isValidPhoneNumber(clientPhone)) {
-    //   toast.error("Veuillez entrer un numéro de téléphone valide.");
-    //   setIsSubmitting(false);
-    //   return;
-    // }
+    const selectedDateTime = new Date(consultationDate);
+    const now = new Date();
+    if (isNaN(selectedDateTime.getTime()) || selectedDateTime <= now) {
+      toast.error("La date et l'heure de consultation doivent être valides et dans le futur.");
+      setIsSubmitting(false);
+      return;
+    }
 
     try {
-      // Send message to backend
       const response = await axiosInstance.post(`${BACKEND_API_BASE_URL}/contact/doctor`, {
         toDoctorId: doctorId,
         clientFirstName: clientFirstName.trim(),
         clientLastName: clientLastName.trim(),
         clientEmail: clientEmail.trim(),
-        clientPhone: clientPhone, // Send the formatted phone number from PhoneInput
+        clientPhone: clientPhone,
+        consultationDate: consultationDate,
         clientMessage: clientMessage.trim(),
       });
 
       if (response.status === 200) {
-        toast.success("Votre message a été envoyé avec succès au médecin et un événement a été ajouté à son calendrier Google !");
+        toast.success("Votre demande de consultation a été envoyée avec succès au médecin et un événement a été ajouté à son calendrier Google !");
         setClientFirstName('');
         setClientLastName('');
         setClientEmail('');
-        setClientPhone(undefined); // Reset phone input
+        setClientPhone(undefined);
+        setConsultationDate('');
         setClientMessage('');
       } else {
-        throw new Error(response.data?.message || "Échec de l'envoi du message.");
+        throw new Error(response.data?.message || "Échec de l'envoi de la demande.");
       }
     } catch (err: any) {
       console.error("Erreur lors de l'envoi du formulaire de contact:", err);
       const errorMessage = err.response?.data?.message || err.message || "Une erreur inconnue est survenue.";
-      toast.error(`Échec de l'envoi du message: ${errorMessage}. Veuillez réessayer plus tard.`);
+      toast.error(`Échec de l'envoi de la demande: ${errorMessage}. Veuillez réessayer plus tard.`);
     } finally {
       setIsSubmitting(false);
     }
-  }, [clientFirstName, clientLastName, clientEmail, clientPhone, clientMessage, doctorId]);
+  }, [clientFirstName, clientLastName, clientEmail, clientPhone, consultationDate, clientMessage, doctorId]);
 
-  // Loading state
+  // Use useMemo for map center.
+  const doctorMapCenter = useMemo(() => {
+    if (doctor && doctor.latitude !== null && doctor.latitude !== undefined && doctor.longitude !== null && doctor.longitude !== undefined) {
+      return { lat: doctor.latitude, lng: doctor.longitude };
+    }
+    return { lat: 34.0, lng: 9.0 }; // Center of Tunisia
+  }, [doctor]);
+
+  // --- Start of Loading/Error/No Doctor Checks ---
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
@@ -171,7 +211,6 @@ export default function DoctorProfilePage() {
     );
   }
 
-  // Error state
   if (error) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-red-50 p-4 text-red-700 text-lg font-semibold text-center">
@@ -185,7 +224,6 @@ export default function DoctorProfilePage() {
     );
   }
 
-  // No doctor found state
   if (!doctor) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
@@ -193,30 +231,48 @@ export default function DoctorProfilePage() {
       </div>
     );
   }
+  // --- End of Loading/Error/No Doctor Checks ---
 
-  // Destructure doctor details
+
+  // Destructure doctor details AFTER confirming 'doctor' is not null
   const {
     user_name,
     first_name,
     last_name,
     email,
-    phone,
+    phone = '',
     profile_pic,
-    country,
+    country = '',
     latitude,
     longitude,
-    speciality,
-    address,
-    address_2,
-    city,
-    zip,
-    office_phone,
+    speciality = '',
+    address = '',
+    address_2 = '',
+    city = '',
+    zip = '',
+    office_phone = '',
   } = doctor;
 
+  // Now, safely derive display variables
   const displayName = user_name || `${first_name || ''} ${last_name || ''}`.trim();
   const displayLastName = last_name || '';
   const contactPhoneNumber = phone || office_phone;
-  const officePhoneNumber = office_phone; // Keep office phone separate for display
+
+  // Calculate min and max for datetime-local input
+  const today = new Date();
+  today.setSeconds(0);
+  today.setMilliseconds(0);
+
+  const currentMinutes = today.getMinutes();
+  if (currentMinutes > 30) {
+      today.setHours(today.getHours() + 1);
+      today.setMinutes(0);
+  } else if (currentMinutes > 0 && currentMinutes <= 30) {
+      today.setMinutes(30);
+  }
+
+  const minDateTime = today.toISOString().slice(0, 16);
+  const maxDateTime = new Date(new Date().setFullYear(new Date().getFullYear() + 1)).toISOString().slice(0, 16);
 
   return (
     <div className="min-h-screen p-4 sm:p-8 font-inter flex flex-col items-center bg-gray-50">
@@ -298,14 +354,14 @@ export default function DoctorProfilePage() {
               )}
 
               {/* Office Phone - displayed separately */}
-              {officePhoneNumber && (
+              {office_phone && (
                 <div className="flex items-start p-3 rounded-lg" style={{ backgroundColor: 'rgba(211, 148, 36, 0.1)' }}>
                   <FaPhoneAlt className="text-xl mr-3 mt-1 flex-shrink-0" style={{ color: DEFAULT_PRESET_COLORS.default }} />
                   <div>
                     <Text className="text-sm font-medium text-gray-600 mb-1">Téléphone du cabinet</Text>
-                    <a href={`tel:${officePhoneNumber}`} className="hover:underline font-medium" style={{ color: DEFAULT_PRESET_COLORS.dark }}>
-                      {officePhoneNumber}
-                    </a>
+                    <Text className="font-medium" style={{ color: DEFAULT_PRESET_COLORS.dark }}>
+                      {office_phone}
+                    </Text>
                   </div>
                 </div>
               )}
@@ -335,16 +391,46 @@ export default function DoctorProfilePage() {
                 </div>
               )}
 
-              {/* Coordinates */}
-              {(latitude !== null && longitude !== null) && (
-                <div className="flex items-start p-3 rounded-lg" style={{ backgroundColor: 'rgba(211, 148, 36, 0.1)' }}>
-                  <FaGlobe className="text-xl mr-3 mt-1 flex-shrink-0" style={{ color: DEFAULT_PRESET_COLORS.default }} />
-                  <div>
-                    <Text className="text-sm font-medium text-gray-600 mb-1">Coordonnées</Text>
-                    <Text className="font-medium" style={{ color: DEFAULT_PRESET_COLORS.dark }}>
-                      Lat: {latitude?.toFixed(6)}, Lng: {longitude?.toFixed(6)}
-                    </Text>
+              {/* Mini-Map for Coordinates */}
+              {(latitude !== null && latitude !== undefined && longitude !== null && longitude !== undefined) ? (
+                <div className="flex flex-col items-start p-3 rounded-lg w-full" style={{ backgroundColor: 'rgba(211, 148, 36, 0.1)' }}>
+                  <div className="flex items-center mb-2">
+                    <FaMapMarkerAlt className="text-xl mr-3 flex-shrink-0" style={{ color: DEFAULT_PRESET_COLORS.default }} />
+                    <Text className="text-sm font-medium text-gray-600">Localisation du cabinet</Text>
                   </div>
+                  <div className="w-full h-[200px] rounded-md overflow-hidden border border-gray-300">
+                    {isMapLoaded && doctorMapCenter.lat !== 0 && doctorMapCenter.lng !== 0 ? (
+                      <GoogleMap
+                        mapContainerStyle={miniMapContainerStyle}
+                        center={doctorMapCenter}
+                        zoom={15}
+                        options={miniMapOptions}
+                      >
+                        <Marker position={doctorMapCenter} />
+                      </GoogleMap>
+                    ) : mapLoadError ? (
+                      <div className="flex items-center justify-center h-full text-red-600 text-sm">
+                        Erreur de chargement de la carte.
+                      </div>
+                    ) : (
+                      <div className="flex items-center justify-center h-full text-gray-500 text-sm">
+                        Chargement de la carte...
+                      </div>
+                    )}
+                  </div>
+                  <Text className="text-xs text-gray-500 mt-2">
+                    Lat: {latitude.toFixed(6)}, Lng: {longitude.toFixed(6)}
+                  </Text>
+                </div>
+              ) : (
+                <div className="flex items-start p-3 rounded-lg" style={{ backgroundColor: 'rgba(211, 148, 36, 0.1)' }}>
+                    <FaGlobe className="text-xl mr-3 mt-1 flex-shrink-0" style={{ color: DEFAULT_PRESET_COLORS.default }} />
+                    <div>
+                        <Text className="text-sm font-medium text-gray-600 mb-1">Coordonnées</Text>
+                        <Text className="font-medium" style={{ color: DEFAULT_PRESET_COLORS.dark }}>
+                            Non disponibles
+                        </Text>
+                    </div>
                 </div>
               )}
             </div>
@@ -355,7 +441,7 @@ export default function DoctorProfilePage() {
             style={{ backgroundColor: '#ffffff', borderColor: DEFAULT_PRESET_COLORS.light }}
           >
             <h2 className="font-bold text-2xl mb-6 text-center" style={{ color: DEFAULT_PRESET_COLORS.dark }}>
-              Contacter le Dr. {displayLastName}
+              Demander une consultation avec le Dr. {displayLastName}
             </h2>
 
             <form onSubmit={handleSubmitContactForm} className="space-y-5">
@@ -395,24 +481,39 @@ export default function DoctorProfilePage() {
                 />
               </div>
 
-              {/* Replaced standard Input with PhoneInput */}
               <div>
                 <Text className="block text-sm font-medium text-gray-700 mb-1">Votre Numéro de Téléphone</Text>
                 <PhoneInput
                   placeholder="Entrez votre numéro de téléphone"
                   value={clientPhone}
-                  onChange={setClientPhone} // PhoneInput handles the value and formatting
-                  defaultCountry="TN" // Set a default country (e.g., Tunisia)
-                  // You might want to add a className prop for custom styling if needed
-                  className="react-phone-number-input-custom-style" // Custom class for styling
-                  limitMaxLength={true} // Limits input length based on country
+                  onChange={setClientPhone}
+                  defaultCountry="TN"
+                  className="react-phone-number-input-custom-style"
+                  limitMaxLength={true}
                 />
               </div>
 
+              {/* Consultation Date and Time */}
               <div>
-                <Text className="block text-sm font-medium text-gray-700 mb-1">Votre Message</Text>
+                <Text className="block text-sm font-medium text-gray-700 mb-1">Date et Heure de consultation souhaitées</Text>
+                <div className="relative">
+                  <Input
+                    type="datetime-local"
+                    value={consultationDate}
+                    onChange={(e) => setConsultationDate(e.target.value)}
+                    min={minDateTime}
+                    max={maxDateTime}
+                    className="w-full pr-10"
+                    required
+                  />
+                  <FaCalendarAlt className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                </div>
+              </div>
+
+              <div>
+                <Text className="block text-sm font-medium text-gray-700 mb-1">Votre Message / Précisions</Text>
                 <Textarea
-                  placeholder="Écrivez votre message ici..."
+                  placeholder="Décrivez brièvement le motif de votre consultation..."
                   value={clientMessage}
                   onChange={(e) => setClientMessage(e.target.value)}
                   className="w-full"
@@ -440,7 +541,7 @@ export default function DoctorProfilePage() {
                     Envoi en cours...
                   </>
                 ) : (
-                  "Envoyer le message"
+                  "Envoyer la demande de consultation"
                 )}
               </Button>
             </form>
