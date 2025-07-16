@@ -91,7 +91,10 @@ export const routes = {
     cases: (id: any) => `/doctors/${id}`,
     doctorFile: (id: any) => `/doctors/${id}/fiche`,
   },
-
+doctors: {
+  list: '/find-doctors',
+  details: (id: string) => `/doctor-profile/${id}`,
+},
   alerts:'/alerts',
   alerts_doctor: {
     list: '/doctors',

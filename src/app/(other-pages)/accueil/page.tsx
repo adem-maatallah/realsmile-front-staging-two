@@ -1,33 +1,36 @@
 'use client';
-
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { Button, Text, Select, SelectOption } from 'rizzui';
-import toast, { Toaster } from 'react-hot-toast'; // Importer le composant Toaster
-import { FaMapMarkerAlt, FaSearchLocation, FaGlobe, FaPhoneAlt, FaEnvelope, FaInfoCircle, FaSortAmountUpAlt } from 'react-icons/fa'; // Ajouté FaSortAmountUpAlt pour l'icône de liste
+import { Button, Text } from 'rizzui';
+import toast, { Toaster } from 'react-hot-toast';
+import { FaMapMarkerAlt, FaSearchLocation, FaGlobe, FaPhoneAlt, FaEnvelope, FaInfoCircle, FaSortAmountUpAlt, FaUserMd, FaClinicMedical } from 'react-icons/fa';
 import { GoogleMap, useJsApiLoader, Marker, InfoWindow } from '@react-google-maps/api';
 import Image from 'next/image';
-import Link from 'next/link'; // Importer Link pour la navigation
-import { routes } from '@/config/routes'; // Supposons que vous ayez une configuration de routes
-import axiosInstance from '@/utils/axiosInstance'; // Importer axiosInstance
+import Link from 'next/link';
+import { routes } from '@/config/routes';
+import axiosInstance from '@/utils/axiosInstance';
 
-// config/colors.ts (Supposons que ce fichier existe et est correctement importé)
+// Color configuration
 export const DEFAULT_PRESET_COLORS = {
-  lighter: '#fef9c3', // Jaune 100
-  light: '#d39424', // Jaune 300
-  default: '#d39424',
-  dark: '#a16207',
-  foreground: '#ffffff',
+  lighter: '#fef9c3', // Light yellow for backgrounds
+  light: '#d39424',    // Medium yellow for borders/accents
+  default: '#d39424', // Default button/link color
+  dark: '#a16207',     // Darker yellow for text/headings
+  foreground: '#ffffff', // White for text on dark backgrounds (not heavily used here)
 };
 
-// --- Interfaces ---
+// Constants
+const BACKEND_API_BASE_URL = process.env.NEXT_PUBLIC_API_URL;
+const Maps_API_KEY = process.env.NEXT_PUBLIC_Maps_API_KEY;
+
+// Interfaces
 interface DoctorLocation {
   id: string;
   user_name: string;
   first_name?: string;
   last_name?: string;
-  country: string;
-  latitude: number | null; // Peut être null si non précis
-  longitude: number | null; // Peut être null si non précis
+  country: string; // This comes from the users table as per your schema
+  latitude: number | null;
+  longitude: number | null;
   phone?: string;
   office_phone?: string;
   email?: string;
@@ -35,7 +38,7 @@ interface DoctorLocation {
   address?: string;
   city?: string;
   profile_pic?: string;
-  distance?: number; // Ajouter la distance pour le tri
+  distance?: number;
 }
 
 interface UserLocation {
@@ -43,16 +46,56 @@ interface UserLocation {
   longitude: number;
   formattedAddress: string | null;
   permissionStatus: 'granted' | 'denied' | 'prompt' | 'unknown';
-  countryCode?: string | null; // Garder pour la suggestion du toast/menu déroulant, pas pour la logique de la carte
+  countryCode?: string | null;
 }
 
-// --- Variables d'environnement ---
-const BACKEND_API_BASE_URL = process.env.NEXT_PUBLIC_API_URL;
-const Maps_API_KEY = process.env.NEXT_PUBLIC_Maps_API_KEY; // Nom de variable d'environnement corrigé
+// Map constants
+const mapContainerStyle = {
+  width: '100%',
+  height: '500px',
+  borderRadius: '1rem',
+  boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)',
+};
 
-// --- Formule Haversine ---
+const initialMapCenter = {
+  lat: 34.0,
+  lng: 9.0
+};
+
+const initialMapZoom = 2;
+const mapLibraries: google.maps.Libraries[] = ['places', 'geocoding'];
+
+// Country centers (for fallback if specific coordinates are missing)
+const COUNTRY_CENTERS: { [key: string]: { lat: number; lng: number } } = {
+  "TN": { lat: 34.0, lng: 9.0 },
+  "MA": { lat: 31.7917, lng: -7.0926 },
+  "DZ": { lat: 28.0339, lng: 1.6596 },
+  "FR": { lat: 46.603354, lng: 1.888334 },
+  "ES": { lat: 40.463667, lng: -3.74922 },
+};
+
+// Country Flags (for dropdown display)
+const COUNTRY_FLAGS: { [key: string]: string } = {
+  "TN": "🇹🇳 Tunisia",
+  "MA": "🇲🇦 Morocco",
+  "DZ": "🇩🇿 Algeria",
+  "FR": "🇫🇷 France",
+  "ES": "🇪🇸 Spain",
+  "US": "🇺🇸 United States",
+  "CA": "🇨🇦 Canada",
+  "GB": "🇬🇧 United Kingdom",
+  "DE": "🇩🇪 Germany",
+  "IT": "🇮🇹 Italy",
+  "BE": "🇧🇪 Belgium",
+  "CH": "🇨🇭 Switzerland",
+  "AE": "🇦🇪 United Arab Emirates",
+  "SA": "🇸🇦 Saudi Arabia",
+  // Add more as needed
+};
+
+// Haversine distance formula
 function haversineDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
-  const R = 6371; // Rayon de la Terre en kilomètres
+  const R = 6371; // Radius of Earth in kilometers
   const dLat = (lat2 - lat1) * Math.PI / 180;
   const dLon = (lon2 - lon1) * Math.PI / 180;
   const a =
@@ -60,92 +103,101 @@ function haversineDistance(lat1: number, lon1: number, lat2: number, lon2: numbe
     Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
     Math.sin(dLon / 2) * Math.sin(dLon / 2);
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  const distance = R * c; // Distance en km
-  return distance;
+  return R * c;
 }
-
-// --- Constantes de la carte ---
-const mapContainerStyle = {
-  width: '100%', // Changé à 100% pour toute la largeur de son conteneur
-  height: '450px', // Hauteur légèrement augmentée pour une meilleure vue
-  borderRadius: '1rem',
-  boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)',
-};
-
-const initialMapCenter = {
-  lat: 34.0, // Un point plus central pour la Tunisie, peut être ajusté
-  lng: 9.0
-};
-const initialMapZoom = 2; // Zoom de la vue mondiale par défaut (affichant le monde entier)
-
-const mapLibraries: google.maps.Libraries[] = ['places', 'geocoding'];
-
-// Coordonnées centrales prédéfinies pour les pays (à étendre si nécessaire)
-const COUNTRY_CENTERS: { [key: string]: { lat: number; lng: number } } = {
-  "TN": { lat: 34.0, lng: 9.0 },
-  "MA": { lat: 31.7917, lng: -7.0926 },
-  "DZ": { lat: 28.0339, lng: 1.6596 },
-  "FR": { lat: 46.603354, lng: 1.888334 },
-  "ES": { lat: 40.463667, lng: -3.74922 },
-  // Ajouter plus de pays ici
-};
 
 export default function FindDoctorsPage() {
   const [doctors, setDoctors] = useState<DoctorLocation[]>([]);
   const [userLocation, setUserLocation] = useState<UserLocation | null>(null);
   const [closestDoctor, setClosestDoctor] = useState<DoctorLocation | null>(null);
-  const [closestDoctorsList, setClosestDoctorsList] = useState<DoctorLocation[]>([]); // Nouvel état pour la liste
+  const [closestDoctorsList, setClosestDoctorsList] = useState<DoctorLocation[]>([]);
   const [loadingDoctors, setLoadingDoctors] = useState(true);
   const [loadingUserLocation, setLoadingUserLocation] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeInfoWindow, setActiveInfoWindow] = useState<DoctorLocation | null>(null);
   const [isFindingClosestDoctor, setIsFindingClosestDoctor] = useState(false);
+  const [viewMode, setViewMode] = useState<'map' | 'list'>('map');
 
-  // État dérivé pour le centre et le zoom de la carte, réactif à la localisation de l'utilisateur
-  const mapCenter = useMemo(() => {
-    if (userLocation?.permissionStatus === 'granted' && userLocation.latitude !== undefined && userLocation.longitude !== undefined) {
-      return { lat: userLocation.latitude, lng: userLocation.longitude };
-    }
-    return initialMapCenter;
-  }, [userLocation]);
-
-  const mapZoom = useMemo(() => {
-    if (userLocation?.permissionStatus === 'granted') {
-      return 14; // Bon zoom local lorsque la localisation de l'utilisateur est connue
-    }
-    return initialMapZoom; // Zoom de la vue mondiale par défaut
-  }, [userLocation]);
+  // State for filters
+  const [selectedSpeciality, setSelectedSpeciality] = useState<string>('');
+  const [selectedCountry, setSelectedCountry] = useState<string>('');
+  const [userLocationInfoWindowOpen, setUserLocationInfoWindowOpen] = useState(false); // New state for user marker InfoWindow
 
   const { isLoaded, loadError } = useJsApiLoader({
     id: 'google-map-script',
     googleMapsApiKey: Maps_API_KEY as string,
     libraries: mapLibraries,
-    language: 'fr', // Défini la langue en français
-    region: 'TN', // Région de la Tunisie
+    language: 'fr',
+    region: 'TN', // Consider making this dynamic based on user's country if detected early
   });
 
   const mapInstanceRef = useRef<google.maps.Map | null>(null);
-  const markers = useRef<google.maps.Marker[]>([]);
 
-  // Fonction pour effacer les marqueurs de la carte
-  const clearMarkers = useCallback(() => {
-    markers.current.forEach(marker => marker.setMap(null));
-    markers.current = [];
-  }, []);
+  // Memoized filtered doctors based on selectedSpeciality and selectedCountry
+  const filteredDoctors = useMemo(() => {
+    return doctors.filter(doc => {
+      const matchesSpeciality = selectedSpeciality ? doc.speciality === selectedSpeciality : true;
+      const matchesCountry = selectedCountry ? doc.country?.toUpperCase() === selectedCountry.toUpperCase() : true;
+      return matchesSpeciality && matchesCountry;
+    });
+  }, [doctors, selectedSpeciality, selectedCountry]);
 
-  // Fonction pour effectuer le géocodage inverse en utilisant OpenStreetMap Nominatim
+  // Memoized map center and zoom
+  const mapCenter = useMemo(() => {
+    // If closestDoctor is set, prioritize its location for initial map center
+    if (closestDoctor && closestDoctor.latitude !== null && closestDoctor.longitude !== null) {
+      return { lat: closestDoctor.latitude, lng: closestDoctor.longitude };
+    }
+    // If user location is granted, use that
+    if (userLocation?.permissionStatus === 'granted' && userLocation.latitude !== undefined && userLocation.longitude !== undefined) {
+      return { lat: userLocation.latitude, lng: userLocation.longitude };
+    }
+    // If filtered doctors exist, try to center on them
+    if (filteredDoctors.length > 0) {
+      const validDoctors = filteredDoctors.filter(doc => doc.latitude !== null && doc.longitude !== null);
+      if (validDoctors.length > 0) {
+        const avgLat = validDoctors.reduce((sum, doc) => sum + doc.latitude!, 0) / validDoctors.length;
+        const avgLng = validDoctors.reduce((sum, doc) => sum + doc.longitude!, 0) / validDoctors.length;
+        return { lat: avgLat, lng: avgLng };
+      }
+    }
+    // Otherwise, use initial global center
+    return initialMapCenter;
+  }, [closestDoctor, userLocation, filteredDoctors]);
+
+  const mapZoom = useMemo(() => {
+    // If closestDoctor is set, zoom in closer
+    if (closestDoctor) {
+      return 15;
+    }
+    // If user location is granted and there are filtered doctors, a mid-level zoom
+    if (userLocation?.permissionStatus === 'granted' && filteredDoctors.length > 0) {
+      return 10;
+    }
+    // If only user location, a bit closer
+    if (userLocation?.permissionStatus === 'granted') {
+      return 12;
+    }
+    // If only filtered doctors, a bit closer than initial
+    if (filteredDoctors.length > 0) {
+      return 6;
+    }
+    // Otherwise, use initial global zoom
+    return initialMapZoom;
+  }, [closestDoctor, userLocation, filteredDoctors]);
+
+  // Reverse geocode user location
   const reverseGeocodeUserLocation = useCallback(async (lat: number, lng: number) => {
     try {
-      const nominatimApiUrl = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lng}&accept-language=fr`; // Ajout de accept-language=fr
+      const nominatimApiUrl = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lng}&accept-language=fr`;
       const res = await fetch(nominatimApiUrl);
       const data = await res.json();
 
       if (res.ok && data && data.display_name) {
         const fullAddress = data.display_name;
         const countryCode = data.address?.country_code?.toUpperCase() || null;
-
         setUserLocation(prev => prev ? { ...prev, formattedAddress: fullAddress, countryCode: countryCode } : null);
-        toast.success(`Votre localisation générale détectée : ${fullAddress.split(',')[0]}`);
+        toast.success(`Votre localisation détectée : ${fullAddress.split(',')[0]}`);
       } else {
         const errorMessage = data.error || "Adresse introuvable via OpenStreetMap.";
         toast.error(`La recherche d'adresse a échoué : ${errorMessage}`);
@@ -158,32 +210,28 @@ export default function FindDoctorsPage() {
     }
   }, []);
 
-  // --- Fonction pour encapsuler la logique des limites et du centre de la carte ---
+  // Update map bounds and center - modified to optionally fit only specific doctors
   const updateMapBoundsAndCenter = useCallback((
     map: google.maps.Map,
-    currentDoctors: DoctorLocation[],
+    doctorsToFit: DoctorLocation[],
     currentUserLocation: UserLocation | null,
-    shouldFitAllDoctors: boolean = true
   ) => {
     if (!map || !window.google || !window.google.maps) {
-      console.warn("La carte ou l'API Google Maps n'est pas entièrement prête pour updateMapBoundsAndCenter.");
+      console.warn("La carte ou l'API Google Maps n'est pas entièrement prête.");
       return;
     }
 
     const bounds = new window.google.maps.LatLngBounds();
     let hasValidLocations = false;
 
-    if (shouldFitAllDoctors) {
-      currentDoctors.forEach(doc => {
-        const docLat = doc.latitude !== null ? doc.latitude : (COUNTRY_CENTERS[doc.country?.toUpperCase() || '']?.lat || null);
-        const docLng = doc.longitude !== null ? doc.longitude : (COUNTRY_CENTERS[doc.country?.toUpperCase() || '']?.lng || null);
-
-        if (docLat !== null && docLng !== null) {
-          bounds.extend({ lat: docLat, lng: docLng });
-          hasValidLocations = true;
-        }
-      });
-    }
+    doctorsToFit.forEach(doc => {
+      const docLat = doc.latitude !== null ? doc.latitude : (COUNTRY_CENTERS[doc.country?.toUpperCase() || '']?.lat || null);
+      const docLng = doc.longitude !== null ? doc.longitude : (COUNTRY_CENTERS[doc.country?.toUpperCase() || '']?.lng || null);
+      if (docLat !== null && docLng !== null) {
+        bounds.extend({ lat: docLat, lng: docLng });
+        hasValidLocations = true;
+      }
+    });
 
     if (currentUserLocation && currentUserLocation.latitude !== undefined && currentUserLocation.longitude !== undefined && currentUserLocation.permissionStatus === 'granted') {
       bounds.extend({ lat: currentUserLocation.latitude, lng: currentUserLocation.longitude });
@@ -197,7 +245,7 @@ export default function FindDoctorsPage() {
         if (currentZoom !== undefined) {
           if (currentZoom < 4) {
             map.setZoom(4);
-          } else if (currentZoom > 15 && ((shouldFitAllDoctors ? currentDoctors.length : 0) + (currentUserLocation ? 1 : 0)) <= 2) {
+          } else if (currentZoom > 15 && doctorsToFit.length <= 2) {
             map.setZoom(15);
           }
         }
@@ -208,22 +256,20 @@ export default function FindDoctorsPage() {
     }
   }, []);
 
+  // Map load and unmount handlers
   const onMapLoad = useCallback((map: google.maps.Map) => {
     mapInstanceRef.current = map;
-    console.log("Instance de carte chargée et définie dans la référence.");
-    if (!userLocation || userLocation.permissionStatus !== 'granted') {
-      updateMapBoundsAndCenter(map, doctors, userLocation, true);
-    }
-  }, [doctors, userLocation, updateMapBoundsAndCenter]);
+    // On initial map load, fit all filtered doctors and user location.
+    updateMapBoundsAndCenter(map, filteredDoctors, userLocation);
+  }, [filteredDoctors, userLocation, updateMapBoundsAndCenter]);
 
 
   const onMapUnmount = useCallback(() => {
     mapInstanceRef.current = null;
     setActiveInfoWindow(null);
-    console.log("Instance de carte démontée de la référence.");
   }, []);
 
-  // Styles de carte personnalisés pour un aspect plus propre
+  // Map styles
   const mapOptions = useMemo(() => ({
     disableDefaultUI: false,
     zoomControl: true,
@@ -231,24 +277,33 @@ export default function FindDoctorsPage() {
     mapTypeControl: true,
     fullscreenControl: true,
     styles: [
-      { featureType: 'poi', stylers: [{ visibility: 'off' }] },
-      { featureType: 'transit', stylers: [{ visibility: 'off' }] },
-      { featureType: 'administrative', elementType: 'geometry', stylers: [{ visibility: 'off' }] },
-      { featureType: 'road', elementType: 'labels', stylers: [{ visibility: 'simplified' }] },
-      { featureType: 'landscape', elementType: 'geometry', stylers: [{ color: '#f5f5f5' }] },
-      { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#aadaff' }] },
-      { featureType: 'road.highway', elementType: 'geometry', stylers: [{ color: '#c5c5c5' }] }
+      { featureType: 'poi', stylers: [{ visibility: 'on' }] },
+      { featureType: 'transit', stylers: [{ visibility: 'on' }] },
+      {
+        featureType: 'road',
+        elementType: 'geometry',
+        stylers: [{ color: '#f5f5f5' }]
+      },
+      {
+        featureType: 'water',
+        elementType: 'geometry',
+        stylers: [{ color: '#aadaff' }]
+      },
+      {
+        featureType: 'road.highway',
+        elementType: 'geometry',
+        stylers: [{ color: '#c5c5c5' }]
+      }
     ],
   }), []);
 
-  // --- 1. Récupérer les localisations des médecins en utilisant axiosInstance ---
+  // Fetch doctors data
   useEffect(() => {
     const fetchDoctors = async () => {
       try {
         setLoadingDoctors(true);
         setError(null);
         const response = await axiosInstance.get(`${BACKEND_API_BASE_URL}/doctors/locations`);
-
         if (response.status !== 200) {
           throw new Error(response.data?.message || "Échec de la récupération des localisations des médecins.");
         }
@@ -256,7 +311,7 @@ export default function FindDoctorsPage() {
         setDoctors(data);
       } catch (err: any) {
         console.error("Erreur lors de la récupération des médecins :", err);
-        setError(`Échec du chargement des médecins : ${err.message}. Veuillez vérifier votre connexion réseau et le serveur backend.`);
+        setError(`Échec du chargement des médecins : ${err.message}. Veuillez vérifier votre connexion réseau.`);
         toast.error(`Échec du chargement des médecins : ${err.message}.`);
       } finally {
         setLoadingDoctors(false);
@@ -265,17 +320,21 @@ export default function FindDoctorsPage() {
     fetchDoctors();
   }, []);
 
-  // --- 2. Obtenir la localisation de l'utilisateur automatiquement au chargement ---
+  // Get user location
   useEffect(() => {
-    if (typeof window === 'undefined' || !isLoaded) {
-      return;
-    }
+    if (typeof window === 'undefined' || !isLoaded) return;
 
     if (!navigator.geolocation) {
-      setError("La géolocalisation n'est pas prise en charge par votre navigateur. Veuillez utiliser un navigateur qui la prend en charge.");
+      setError("La géolocalisation n'est pas prise en charge par votre navigateur.");
       toast.error("La géolocalisation n'est pas prise en charge par votre navigateur.");
       setLoadingUserLocation(false);
-      setUserLocation({ latitude: 0, longitude: 0, formattedAddress: null, permissionStatus: 'denied', countryCode: null });
+      setUserLocation({
+        latitude: 0,
+        longitude: 0,
+        formattedAddress: null,
+        permissionStatus: 'denied',
+        countryCode: null
+      });
       return;
     }
 
@@ -283,7 +342,6 @@ export default function FindDoctorsPage() {
 
     const handleGeolocationSuccess = (position: GeolocationPosition) => {
       const { latitude, longitude } = position.coords;
-      console.log(`Géolocalisation réussie : Lat ${latitude}, Lng ${longitude}`);
       setUserLocation(prev => ({
         ...prev!,
         latitude,
@@ -302,22 +360,19 @@ export default function FindDoctorsPage() {
 
       switch (geoError.code) {
         case geoError.PERMISSION_DENIED:
-          errorMessage = "Accès à la localisation refusé par l'utilisateur. Veuillez l'activer dans les paramètres du navigateur.";
+          errorMessage = "Accès à la localisation refusé. Veuillez l'activer dans les paramètres du navigateur.";
           permissionState = 'denied';
           break;
         case geoError.POSITION_UNAVAILABLE:
-          errorMessage = "Les informations de localisation sont indisponibles (par exemple, erreur réseau, GPS désactivé).";
+          errorMessage = "Les informations de localisation sont indisponibles.";
           break;
         case geoError.TIMEOUT:
-          errorMessage = "La demande d'obtention de la localisation de l'utilisateur a expiré. Réessayez ou vérifiez la connexion réseau.";
-          break;
-        default:
-          errorMessage = `Une erreur inconnue s'est produite lors de la détection de la localisation : ${geoError.message}`;
+          errorMessage = "La demande de localisation a expiré. Réessayez ou vérifiez votre connexion.";
           break;
       }
+
       setError(errorMessage);
       toast.error(errorMessage);
-      console.error('Erreur de géolocalisation :', geoError);
       setLoadingUserLocation(false);
       setUserLocation(prev => ({
         ...prev!,
@@ -337,119 +392,164 @@ export default function FindDoctorsPage() {
 
     navigator.permissions.query({ name: 'geolocation' }).then((permissionStatus) => {
       const currentPermission = permissionStatus.state;
-      setUserLocation(prev => prev ? { ...prev, permissionStatus: currentPermission } : { latitude: 0, longitude: 0, formattedAddress: null, permissionStatus: currentPermission, countryCode: null });
+      setUserLocation(prev => prev ? { ...prev, permissionStatus: currentPermission } : {
+        latitude: 0,
+        longitude: 0,
+        formattedAddress: null,
+        permissionStatus: currentPermission,
+        countryCode: null
+      });
     });
   }, [isLoaded, reverseGeocodeUserLocation]);
 
-  // --- 3. Effet principal pour contrôler la vue de la carte en fonction de la disponibilité des données ---
+  // Function to calculate and update closest doctors for the LIST view
+  const calculateDoctorsForList = useCallback(() => {
+    if (filteredDoctors.length === 0) {
+      setClosestDoctorsList([]);
+      setClosestDoctor(null); // Clear closest doctor if no doctors
+      return;
+    }
+
+    if (!userLocation || userLocation.permissionStatus !== 'granted') {
+      // If no valid user location, just show filtered doctors without distance
+      setClosestDoctorsList(filteredDoctors.map(doc => ({ ...doc, distance: undefined })));
+      setClosestDoctor(null); // Ensure closestDoctor is null if no valid location
+      return;
+    }
+
+    const doctorsWithDistance: DoctorLocation[] = filteredDoctors
+      .map(doc => {
+        const docLat = doc.latitude !== null ? doc.latitude : (COUNTRY_CENTERS[doc.country?.toUpperCase() || '']?.lat || null);
+        const docLng = doc.longitude !== null ? doc.longitude : (COUNTRY_CENTERS[doc.country?.toUpperCase() || '']?.lng || null);
+
+        if (docLat !== null && docLng !== null) {
+          const distance = haversineDistance(
+            userLocation.latitude,
+            userLocation.longitude,
+            docLat,
+            docLng
+          );
+          return { ...doc, distance };
+        }
+        return null;
+      })
+      .filter(Boolean) as DoctorLocation[];
+
+    doctorsWithDistance.sort((a, b) => (a.distance || Infinity) - (b.distance || Infinity));
+    setClosestDoctorsList(doctorsWithDistance);
+
+    // Don't set closestDoctor or activeInfoWindow here, only for the list calculation.
+    // The closestDoctor state will be handled by `focusMapOnClosestDoctors` for map interactions.
+  }, [userLocation, filteredDoctors]);
+
+
+  // Effect to automatically calculate closest doctors list when data is ready or filters change
   useEffect(() => {
-    if (!isLoaded || !mapInstanceRef.current) {
-      return;
+    if (!loadingDoctors && !loadingUserLocation) {
+      calculateDoctorsForList();
     }
-    const map = mapInstanceRef.current;
+    // When filters change, also reset the active info window and closest doctor
+    setActiveInfoWindow(null);
+    setClosestDoctor(null);
+    if (mapInstanceRef.current) {
+      // Fit all filtered doctors and user location when filters change
+      updateMapBoundsAndCenter(mapInstanceRef.current, filteredDoctors, userLocation);
+    }
+  }, [doctors, userLocation, loadingDoctors, loadingUserLocation, calculateDoctorsForList, filteredDoctors, updateMapBoundsAndCenter]);
 
-    clearMarkers();
-    const doctorsToDisplayOnMap = doctors;
 
-    doctorsToDisplayOnMap.forEach(doc => {
-      const markerLat = doc.latitude !== null ? doc.latitude : (COUNTRY_CENTERS[doc.country?.toUpperCase() || '']?.lat || null);
-      const markerLng = doc.longitude !== null ? doc.longitude : (COUNTRY_CENTERS[doc.country?.toUpperCase() || '']?.lng || null);
-
-      if (markerLat !== null && markerLng !== null) {
-        const marker = new window.google.maps.Marker({
-          position: { lat: markerLat, lng: markerLng },
-          map: map,
-          title: doc.user_name || 'Médecin',
-          icon: {
-            url: closestDoctor?.id === doc.id ? 'http://maps.google.com/mapfiles/ms/icons/green-dot.png' : 'http://maps.google.com/mapfiles/ms/icons/red-dot.png', // Vert pour le plus proche, rouge pour les autres
-            scaledSize: new window.google.maps.Size(32, 32)
-          }
-        });
-
-        marker.addListener('click', () => {
-          setActiveInfoWindow(doc);
-        });
-        markers.current.push(marker);
-      }
-    });
-
-  }, [isLoaded, doctors, closestDoctor, activeInfoWindow, mapInstanceRef, clearMarkers]);
-
-  const findClosestDoctor = useCallback(() => {
+  // Function to focus the map and set activeInfoWindow on closest doctors (called by button)
+  const focusMapOnClosestDoctors = useCallback(() => {
     setIsFindingClosestDoctor(true);
-    setClosestDoctorsList([]); // Effacer la liste précédente lors d'une nouvelle recherche
-
-    if (!userLocation || userLocation.latitude === undefined || userLocation.longitude === undefined || userLocation.permissionStatus !== 'granted') {
-      toast.error("Votre **autorisation de localisation accordée** est requise pour trouver le médecin le plus proche. Veuillez l'activer dans les paramètres de votre navigateur.");
+    if (!userLocation || userLocation.permissionStatus !== 'granted') {
+      toast.error("Votre localisation est requise pour trouver le médecin le plus proche et ajuster la carte.");
       setIsFindingClosestDoctor(false);
+      setClosestDoctor(null); // Clear any previous closest doctor if location denied
+      setActiveInfoWindow(null);
       return;
     }
 
-    const doctorsWithDistance: DoctorLocation[] = [];
-    doctors.forEach(doc => {
-      const docLat = doc.latitude !== null ? doc.latitude : (COUNTRY_CENTERS[doc.country?.toUpperCase() || '']?.lat || null);
-      const docLng = doc.longitude !== null ? doc.longitude : (COUNTRY_CENTERS[doc.country?.toUpperCase() || '']?.lng || null);
+    // Recalculate based on current state of filteredDoctors
+    const doctorsWithDistance: DoctorLocation[] = filteredDoctors
+      .map(doc => {
+        const docLat = doc.latitude !== null ? doc.latitude : (COUNTRY_CENTERS[doc.country?.toUpperCase() || '']?.lat || null);
+        const docLng = doc.longitude !== null ? doc.longitude : (COUNTRY_CENTERS[doc.country?.toUpperCase() || '']?.lng || null);
 
-      if (docLat !== null && docLng !== null && userLocation) {
-        const distance = haversineDistance(
-          userLocation.latitude,
-          userLocation.longitude,
-          docLat,
-          docLng
-        );
-        doctorsWithDistance.push({ ...doc, distance });
-      }
-    });
+        if (docLat !== null && docLng !== null && userLocation) {
+          const distance = haversineDistance(
+            userLocation.latitude,
+            userLocation.longitude,
+            docLat,
+            docLng
+          );
+          return { ...doc, distance };
+        }
+        return null;
+      })
+      .filter(Boolean) as DoctorLocation[];
 
-    // Trier les médecins par distance
     doctorsWithDistance.sort((a, b) => (a.distance || Infinity) - (b.distance || Infinity));
 
     if (doctorsWithDistance.length > 0) {
-      setClosestDoctor(doctorsWithDistance[0]); // Définir le médecin le plus proche pour la mise en évidence sur la carte
-      setClosestDoctorsList(doctorsWithDistance); // Définir la liste complète triée
-      toast.success(`Médecin le plus proche trouvé : ${doctorsWithDistance[0].user_name || 'Médecin'} (${doctorsWithDistance[0].distance?.toFixed(2)} km)`);
+      const topDoctors = doctorsWithDistance.slice(0, 5); // Consider top 5 for map fitting
+      setClosestDoctor(doctorsWithDistance[0]); // Only the very closest is stored
+      setActiveInfoWindow(doctorsWithDistance[0]); // Set info window for the closest one
 
-      // Ajuster la carte pour afficher la localisation de l'utilisateur et les quelques médecins les plus proches
       if (mapInstanceRef.current && userLocation) {
-        const map = mapInstanceRef.current;
-        const newBounds = new window.google.maps.LatLngBounds();
-        newBounds.extend({ lat: userLocation.latitude, lng: userLocation.longitude });
-
-        // Ajouter les 5 premiers médecins les plus proches aux limites (ou moins si moins disponibles)
-        doctorsWithDistance.slice(0, 5).forEach(doc => {
-          const docLat = doc.latitude !== null ? doc.latitude : (COUNTRY_CENTERS[doc.country?.toUpperCase() || '']?.lat || null);
-          const docLng = doc.longitude !== null ? doc.longitude : (COUNTRY_CENTERS[doc.country?.toUpperCase() || '']?.lng || null);
-          if (docLat !== null && docLng !== null) {
-            newBounds.extend({ lat: docLat, lng: docLng });
-          }
-        });
-
-        if (!newBounds.isEmpty()) {
-          map.fitBounds(newBounds);
-          google.maps.event.addListenerOnce(map, 'idle', () => {
-            const currentZoom = map.getZoom();
-            if (currentZoom !== undefined && currentZoom > 15) {
-              map.setZoom(15);
-            }
-          });
-        }
+        updateMapBoundsAndCenter(mapInstanceRef.current, topDoctors, userLocation);
       }
-      setActiveInfoWindow(doctorsWithDistance[0]); // Ouvrir la fenêtre d'information pour le plus proche
+      toast.success(`Médecin le plus proche trouvé : ${doctorsWithDistance[0].user_name || 'Médecin'} (${doctorsWithDistance[0].distance?.toFixed(2)} km)`);
     } else {
-      toast.info("Aucun médecin trouvé à proximité.");
+      toast.info("Aucun médecin trouvé à proximité avec les filtres actuels.");
       setClosestDoctor(null);
-      setClosestDoctorsList([]);
+      setActiveInfoWindow(null);
+      if (mapInstanceRef.current) { // Reset map if no doctors found after search
+        updateMapBoundsAndCenter(mapInstanceRef.current, [], userLocation);
+      }
     }
     setIsFindingClosestDoctor(false);
-  }, [userLocation, doctors]);
+  }, [userLocation, filteredDoctors, updateMapBoundsAndCenter]);
 
+  // Extract unique specialities for filter dropdown
+  const uniqueSpecialities = useMemo(() => {
+    const specialities = new Set<string>();
+    doctors.forEach(doc => {
+      if (doc.speciality) {
+        specialities.add(doc.speciality);
+      }
+    });
+    return Array.from(specialities).sort();
+  }, [doctors]);
+
+  // --- START OF FIX FOR COUNTRY FILTER DISPLAY ---
+  // Extract unique countries for filter dropdown
+  const uniqueCountries = useMemo(() => {
+    const countries = new Set<string>();
+    doctors.forEach(doc => {
+      // Ensure we only add non-empty country codes
+      if (doc.country && doc.country.trim() !== '') {
+        countries.add(doc.country.toUpperCase());
+      }
+    });
+    // Convert Set to Array, then sort by display name
+    return Array.from(countries).sort((a, b) => {
+        // Use COUNTRY_FLAGS for sorting if a friendly name exists, otherwise use the code itself
+        const nameA = COUNTRY_FLAGS[a] || a;
+        const nameB = COUNTRY_FLAGS[b] || b;
+        return nameA.localeCompare(nameB);
+    });
+  }, [doctors]); // Depend on doctors to get all available countries
+
+  // --- END OF FIX FOR COUNTRY FILTER DISPLAY ---
+
+  // Render map content
   const renderMapContent = () => {
     if (loadError) {
       return (
         <div className="absolute inset-0 flex flex-col items-center justify-center bg-red-50 text-red-700 text-lg font-semibold z-10 p-4 rounded-xl text-center">
           <p className="mb-2">🚨 Erreur de chargement de Google Maps.</p>
           <p className="text-base font-normal">{loadError.message}</p>
-          <p className="text-sm mt-2">Veuillez vérifier votre clé API, la configuration de la facturation et votre connexion réseau.</p>
+          <p className="text-sm mt-2">Veuillez vérifier votre clé API et votre connexion réseau.</p>
         </div>
       );
     }
@@ -475,20 +575,34 @@ export default function FindDoctorsPage() {
         onLoad={onMapLoad}
         onUnmount={onMapUnmount}
       >
-        {/* Marqueur de localisation de l'utilisateur */}
-        {userLocation && userLocation.permissionStatus === 'granted' && (
-          <Marker
-            position={{ lat: userLocation.latitude, lng: userLocation.longitude }}
-            title="Votre localisation"
-            icon={{
-              url: 'http://maps.google.com/mapfiles/ms/icons/blue-dot.png', // Un point bleu plus clair
-              scaledSize: new window.google.maps.Size(32, 32)
-            }}
-          />
+        {/* User location marker */}
+        {userLocation?.permissionStatus === 'granted' && (
+          <>
+            <Marker
+              position={{ lat: userLocation.latitude, lng: userLocation.longitude }}
+              title="Votre position"
+              icon={{
+                url: 'http://maps.google.com/mapfiles/ms/icons/blue-dot.png', // Explicit blue dot icon
+                scaledSize: new window.google.maps.Size(32, 32)
+              }}
+              onClick={() => setUserLocationInfoWindowOpen(true)}
+            />
+            {userLocationInfoWindowOpen && (
+              <InfoWindow
+                position={{ lat: userLocation.latitude, lng: userLocation.longitude }}
+                onCloseClick={() => setUserLocationInfoWindowOpen(false)}
+              >
+                <div className="p-2 text-center">
+                  <h3 className="font-bold text-base">Votre Position</h3>
+                  <p className="text-sm text-gray-700">{userLocation.formattedAddress || 'Position exacte'}</p>
+                </div>
+              </InfoWindow>
+            )}
+          </>
         )}
 
-        {/* Marqueurs des médecins */}
-        {doctors.map(doc => {
+        {/* Doctor markers (filteredDoctors used here) */}
+        {filteredDoctors.map(doc => {
           const markerLat = doc.latitude !== null ? doc.latitude : (COUNTRY_CENTERS[doc.country?.toUpperCase() || '']?.lat || null);
           const markerLng = doc.longitude !== null ? doc.longitude : (COUNTRY_CENTERS[doc.country?.toUpperCase() || '']?.lng || null);
 
@@ -500,7 +614,9 @@ export default function FindDoctorsPage() {
                 title={doc.user_name || 'Médecin'}
                 onClick={() => setActiveInfoWindow(doc)}
                 icon={{
-                  url: closestDoctor?.id === doc.id ? 'http://maps.google.com/mapfiles/ms/icons/green-dot.png' : 'http://maps.google.com/mapfiles/ms/icons/red-dot.png', // Vert pour le plus proche, rouge pour les autres
+                  url: (closestDoctor && closestDoctor.id === doc.id)
+                    ? 'http://maps.google.com/mapfiles/ms/icons/red-dot.png' // Red for the *single* closest doctor after button press
+                    : 'http://maps.google.com/mapfiles/ms/icons/green-dot.png', // Green for all other doctors
                   scaledSize: new window.google.maps.Size(32, 32)
                 }}
               />
@@ -509,8 +625,8 @@ export default function FindDoctorsPage() {
           return null;
         })}
 
-        {/* Fenêtre d'information */}
-        {activeInfoWindow && (activeInfoWindow.latitude !== null || COUNTRY_CENTERS[activeInfoWindow.country?.toUpperCase() || '']) && (
+        {/* Info window for doctors */}
+        {activeInfoWindow && (
           <InfoWindow
             position={{
               lat: activeInfoWindow.latitude !== null ? activeInfoWindow.latitude : (COUNTRY_CENTERS[activeInfoWindow.country?.toUpperCase() || '']?.lat || 0),
@@ -534,19 +650,23 @@ export default function FindDoctorsPage() {
               <h3 className="font-bold text-lg text-center" style={{ color: DEFAULT_PRESET_COLORS.dark }}>
                 {activeInfoWindow.user_name || `${activeInfoWindow.first_name || ''} ${activeInfoWindow.last_name || ''}`.trim() || 'Médecin'}
               </h3>
-              {activeInfoWindow.speciality && <p className="text-sm text-gray-600 text-center"><strong>Spécialité :</strong> {activeInfoWindow.speciality}</p>}
+              {activeInfoWindow.speciality && (
+                <p className="text-sm text-gray-600 text-center flex items-center justify-center">
+                  <FaUserMd className="mr-1" /> {activeInfoWindow.speciality}
+                </p>
+              )}
               {(activeInfoWindow.address || activeInfoWindow.city || activeInfoWindow.country) && (
                 <p className="text-sm text-gray-600 flex items-center justify-center text-center">
                   <FaMapMarkerAlt className="mr-1 text-gray-500 flex-shrink-0" />
                   {activeInfoWindow.address ? `${activeInfoWindow.address}, ` : ''}
                   {activeInfoWindow.city ? `${activeInfoWindow.city}, ` : ''}
-                  {activeInfoWindow.country || ''}
+                  {COUNTRY_FLAGS[activeInfoWindow.country?.toUpperCase() || ''] || activeInfoWindow.country || ''}
                 </p>
               )}
               {(activeInfoWindow.phone || activeInfoWindow.office_phone) && (
                 <p className="text-sm text-gray-600 flex items-center justify-center">
                   <FaPhoneAlt className="mr-1 text-gray-500" />
-                  <a href={`tel:${activeInfoWindow.office_phone || activeInfoWindow.phone}`} className="hover:underline" style={{ color: DEFAULT_PRESET_COLORS.dark }}>
+                  <a href={`tel:${activeInfoWindow.office_phone || activeInfoWindow.phone}`} className="hover:underline">
                     {activeInfoWindow.office_phone || activeInfoWindow.phone}
                   </a>
                 </p>
@@ -554,7 +674,7 @@ export default function FindDoctorsPage() {
               {activeInfoWindow.email && (
                 <p className="text-sm text-gray-600 flex items-center justify-center">
                   <FaEnvelope className="mr-1 text-gray-500" />
-                  <a href={`mailto:${activeInfoWindow.email}`} className="hover:underline" style={{ color: DEFAULT_PRESET_COLORS.dark }}>{activeInfoWindow.email}</a>
+                  <a href={`mailto:${activeInfoWindow.email}`} className="hover:underline">{activeInfoWindow.email}</a>
                 </p>
               )}
               {activeInfoWindow.distance !== undefined && (
@@ -562,6 +682,19 @@ export default function FindDoctorsPage() {
                   <strong>Distance :</strong> {activeInfoWindow.distance.toFixed(2)} km
                 </p>
               )}
+              <Link
+                href={routes.doctors.details(activeInfoWindow.id)}
+                passHref
+                className="mt-3"
+              >
+                <Button
+                  size="sm"
+                  className="w-full px-4 py-2 rounded-full text-white font-medium"
+                  style={{ backgroundColor: DEFAULT_PRESET_COLORS.default }}
+                >
+                  Voir le profil
+                </Button>
+              </Link>
             </div>
           </InfoWindow>
         )}
@@ -570,8 +703,8 @@ export default function FindDoctorsPage() {
   };
 
   return (
-    <div className="min-h-screen p-4 sm:p-8 font-inter flex flex-col items-center bg-gray-50"> {/* Couleur de fond changée */}
-      <div className="max-w-7xl w-full mx-auto bg-white rounded-3xl shadow-xl p-6 sm:p-10 border-px border-gray-200">
+    <div className="min-h-screen p-4 sm:p-8 font-inter flex flex-col items-center bg-gray-50">
+      <div className="max-w-7xl w-full mx-auto bg-white rounded-3xl shadow-xl p-6 sm:p-10 border border-gray-200">
         <header className="text-center mb-10">
           <h1
             className="text-4xl sm:text-5xl md:text-6xl font-extrabold mb-4 leading-tight tracking-tight drop-shadow-lg"
@@ -580,11 +713,10 @@ export default function FindDoctorsPage() {
               textShadow: '2px 2px 4px rgba(0,0,0,0.2)',
             }}
           >
-            Trouvez Votre <span style={{ color: DEFAULT_PRESET_COLORS.default }}>Médecin Idéal</span>
+            Trouvez Votre <span style={{ color: DEFAULT_PRESET_COLORS.default }}>Médecin</span>
           </h1>
           <p className="text-center text-gray-700 text-lg sm:text-xl max-w-3xl mx-auto">
-            Découvrez facilement les professionnels de la santé les mieux notés à proximité.
-            Votre santé, votre choix, simplifié.
+            Découvrez facilement les professionnels de la santé près de chez vous.
           </p>
         </header>
 
@@ -597,18 +729,16 @@ export default function FindDoctorsPage() {
           </div>
         )}
 
-        {/* Section d'action principale : Bouton Trouver le médecin le plus proche et informations de localisation de l'utilisateur */}
         <div className="flex flex-col md:flex-row justify-center items-center gap-6 mb-8">
-          {/* Bouton Trouver le médecin le plus proche */}
           <Button
-            onClick={findClosestDoctor}
+            onClick={focusMapOnClosestDoctors} // This button now calls the specific map focus function
             disabled={loadingUserLocation || loadingDoctors || isFindingClosestDoctor || userLocation?.permissionStatus !== 'granted'}
             className="w-full md:w-auto px-8 py-3 flex items-center justify-center text-white font-semibold rounded-full shadow-lg transition duration-300 ease-in-out transform hover:-translate-y-1 hover:shadow-xl active:scale-95 focus:outline-none focus:ring-4 focus:ring-offset-2"
             style={{
               backgroundColor: DEFAULT_PRESET_COLORS.default,
               borderColor: DEFAULT_PRESET_COLORS.dark,
-              '--tw-ring-color': DEFAULT_PRESET_COLORS.light, // Propriété personnalisée pour la couleur de l'anneau
-            } as React.CSSProperties} // Cast vers React.CSSProperties
+              '--tw-ring-color': DEFAULT_PRESET_COLORS.light,
+            } as React.CSSProperties}
           >
             {isFindingClosestDoctor ? (
               <>
@@ -616,16 +746,15 @@ export default function FindDoctorsPage() {
                   <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                 </svg>
-                Recherche du plus proche...
+                Recherche en cours...
               </>
             ) : (
               <>
-                <FaSearchLocation className="mr-2 text-xl" /> Trouver le médecin le plus proche
+                <FaSearchLocation className="mr-2 text-xl" /> Trouver les médecins les plus proches (sur carte)
               </>
             )}
           </Button>
 
-          {/* Informations de localisation de l'utilisateur */}
           {userLocation && (
             <div className="p-4 rounded-xl border shadow-sm animate-fade-in w-full md:w-auto flex-grow flex items-start"
               style={{
@@ -636,14 +765,14 @@ export default function FindDoctorsPage() {
             >
               <FaMapMarkerAlt className="mr-3 text-xl flex-shrink-0" style={{ color: DEFAULT_PRESET_COLORS.default }} />
               <div>
-                <h2 className="font-bold text-base mb-1">Votre localisation :</h2>
+                <h2 className="font-bold text-base mb-1">Votre position :</h2>
                 {loadingUserLocation ? (
                   <p className="text-sm flex items-center">
                     <svg className="animate-spin h-4 w-4 mr-2" style={{ color: DEFAULT_PRESET_COLORS.default }} viewBox="0 0 24 24">
                       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                     </svg>
-                    Détection...
+                    Détection en cours...
                   </p>
                 ) : (
                   <>
@@ -653,11 +782,6 @@ export default function FindDoctorsPage() {
                         <FaInfoCircle className="mr-1" /> Localisation refusée. Activez-la dans les paramètres.
                       </p>
                     )}
-                    {userLocation.permissionStatus === 'prompt' && (
-                      <p className="text-xs mt-1 text-blue-700 flex items-center">
-                        <FaInfoCircle className="mr-1" /> Accordez l'autorisation de localisation lorsque vous y êtes invité.
-                      </p>
-                    )}
                   </>
                 )}
               </div>
@@ -665,83 +789,193 @@ export default function FindDoctorsPage() {
           )}
         </div>
 
-        {/* Section de la liste des médecins les plus proches */}
-        {closestDoctorsList.length > 0 && (
-          <>
-            <hr className="my-8 border-gray-200" /> {/* Séparateur */}
-            <div className="mb-6 p-5 rounded-xl border shadow-sm animate-fade-in"
-              style={{
-                backgroundColor: DEFAULT_PRESET_COLORS.lighter,
-                borderColor: DEFAULT_PRESET_COLORS.light,
-                color: DEFAULT_PRESET_COLORS.dark,
-              }}
+        {/* Filter Section */}
+        <div className="flex flex-col sm:flex-row gap-4 mb-8 justify-center">
+            <div className="relative w-full sm:w-1/2 md:w-1/3">
+                <FaUserMd className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                <select
+                    value={selectedSpeciality}
+                    onChange={(e) => setSelectedSpeciality(e.target.value)}
+                    className="block w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                    style={{ backgroundColor: DEFAULT_PRESET_COLORS.lighter, color: DEFAULT_PRESET_COLORS.dark, borderColor: DEFAULT_PRESET_COLORS.light }}
+                >
+                    <option value="">Toutes les spécialités</option>
+                    {uniqueSpecialities.map(speciality => (
+                        <option key={speciality} value={speciality}>{speciality}</option>
+                    ))}
+                </select>
+            </div>
+            <div className="relative w-full sm:w-1/2 md:w-1/3">
+                <FaGlobe className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+               <select
+    value={selectedCountry}
+    onChange={(e) => setSelectedCountry(e.target.value)}
+    className="block w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+    style={{ backgroundColor: DEFAULT_PRESET_COLORS.lighter, color: DEFAULT_PRESET_COLORS.dark, borderColor: DEFAULT_PRESET_COLORS.light }}
+  >
+    <option value="">Tous les pays</option>
+    {uniqueCountries.map(countryCode => (
+      <option key={countryCode} value={countryCode}>
+        {countryCode} {/* Display exact country code from database */}
+      </option>
+    ))}
+  </select>
+            </div>
+        </div>
+
+        {/* View mode toggle */}
+        <div className="flex justify-center mb-6">
+          <div className="inline-flex rounded-full border border-gray-200 bg-white p-1">
+            <button
+              onClick={() => setViewMode('map')}
+              className={`px-4 py-2 rounded-full text-sm font-medium transition-colors ${viewMode === 'map' ? 'text-white' : 'text-gray-500 hover:text-gray-700'}`}
+              style={{ backgroundColor: viewMode === 'map' ? DEFAULT_PRESET_COLORS.default : '' }}
             >
-              <h2 className="font-bold text-xl mb-4 flex items-center">
-                <FaSortAmountUpAlt className="mr-3 text-2xl" style={{ color: DEFAULT_PRESET_COLORS.default }} /> Top des médecins les plus proches :
-              </h2>
-              <ul className="space-y-3">
-                {closestDoctorsList.slice(0, 5).map((doc, index) => ( // Afficher les 5 premiers dans la liste
-                  <li key={doc.id} className="p-3 rounded-lg flex items-center border border-gray-200 bg-white shadow-sm hover:shadow-md transition-shadow">
-                    {doc.profile_pic && (
-                      <Image
-                        src={doc.profile_pic}
-                        alt={doc.user_name || 'Profil du médecin'}
-                        width={50}
-                        height={50}
-                        className="rounded-full object-cover mr-4 flex-shrink-0 border border-gray-200"
-                        unoptimized={true}
-                      />
-                    )}
-                    <div className="flex-grow">
-                      <p className="font-semibold text-base" style={{ color: DEFAULT_PRESET_COLORS.dark }}>
-                        {index + 1}. {doc.user_name || `${doc.first_name || ''} ${doc.last_name || ''}`.trim() || 'Médecin'}
-                        {doc.distance !== undefined && <span className="ml-2 text-gray-500 text-sm">({doc.distance.toFixed(2)} km)</span>}
-                      </p>
-                      {doc.speciality && <p className="text-sm text-gray-600">Spécialité : {doc.speciality}</p>}
-                      {(doc.address || doc.city || doc.country) && (
-                        <p className="text-xs text-gray-500">
-                          {doc.address ? `${doc.address}, ` : ''}
-                          {doc.city ? `${doc.city}, ` : ''}
-                          {doc.country || ''}
-                        </p>
-                      )}
-                    </div>
-                    {/* CECI EST LA LIGNE QUI CAUSE L'ERREUR */}
-                    <Link
-                      href={
-                        routes.doctors?.details // Vérifier si 'doctors' et 'details' existent
-                          ? (typeof routes.doctors.details === 'function' // Vérifier si 'details' est une fonction
-                            ? routes.doctors.details(doc.id) // Si c'est une fonction, l'appeler
-                            : `${routes.doctors.details}/${doc.id}` // Si c'est une chaîne, concaténer
-                          )
-                          : `/doctors/${doc.id}` // Repli si 'routes.doctors.details' n'est pas défini
-                      }
-                      passHref
-                    >
+              <FaGlobe className="inline mr-1" /> Carte
+            </button>
+            <button
+              onClick={() => setViewMode('list')}
+              className={`px-4 py-2 rounded-full text-sm font-medium transition-colors ${viewMode === 'list' ? 'text-white' : 'text-gray-500 hover:text-gray-700'}`}
+              style={{ backgroundColor: viewMode === 'list' ? DEFAULT_PRESET_COLORS.default : '' }}
+            >
+              <FaSortAmountUpAlt className="inline mr-1" /> Liste
+            </button>
+          </div>
+        </div>
+
+        {/* Doctors list or map view */}
+        {viewMode === 'list' ? (
+          <div className="mb-6">
+            {closestDoctorsList.length > 0 ? (
+              <div className="overflow-x-auto bg-white rounded-xl shadow-md">
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        #
+                      </th>
+                      <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Médecin
+                      </th>
+                      <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Spécialité
+                      </th>
+                      <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Adresse
+                      </th>
+                      <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Distance
+                      </th>
+                      <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Actions
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {closestDoctorsList.map((doc, index) => (
+                      <tr key={doc.id} className="hover:bg-gray-50 transition-colors">
+                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                          {index + 1}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 flex items-center">
+                          {doc.profile_pic && (
+                            <Image
+                              src={doc.profile_pic}
+                              alt={doc.user_name || 'Profil du médecin'}
+                              width={40}
+                              height={40}
+                              className="rounded-full object-cover mr-3"
+                              unoptimized={true}
+                            />
+                          )}
+                          <div>
+                            <div className="text-sm font-medium text-gray-900">{doc.user_name || `${doc.first_name || ''} ${doc.last_name || ''}`.trim()}</div>
+                            <div className="text-sm text-gray-500">{doc.email}</div>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                          {doc.speciality || 'Non spécifié'}
+                        </td>
+                        <td className="px-6 py-4 text-sm text-gray-500">
+                          {doc.address || 'Non spécifiée'}, {doc.city || ''}, {COUNTRY_FLAGS[doc.country?.toUpperCase() || ''] || doc.country || ''}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                          {userLocation?.permissionStatus === 'granted' && doc.distance !== undefined ? `${doc.distance.toFixed(2)} km` : 'Localisation requise'}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                          <Link href={routes.doctors.details(doc.id)} passHref>
+                            <Button
+                              size="sm"
+                              className="px-4 py-2 rounded-full text-white font-medium mr-2"
+                              style={{ backgroundColor: DEFAULT_PRESET_COLORS.default }}
+                            >
+                              Voir le profil
+                            </Button>
+                          </Link>
+                          <Button
+                            size="sm"
+                            className="px-4 py-2 rounded-full border border-gray-300 font-medium"
+                            onClick={() => {
+                              setActiveInfoWindow(doc);
+                              if (mapInstanceRef.current) {
+                                const markerLat = doc.latitude !== null ? doc.latitude : (COUNTRY_CENTERS[doc.country?.toUpperCase() || '']?.lat || null);
+                                const markerLng = doc.longitude !== null ? doc.longitude : (COUNTRY_CENTERS[doc.country?.toUpperCase() || '']?.lng || null);
+                                if (markerLat !== null && markerLng !== null) {
+                                  mapInstanceRef.current.setCenter({ lat: markerLat, lng: markerLng });
+                                  mapInstanceRef.current.setZoom(15);
+                                }
+                              }
+                              setClosestDoctor(null); // Clear closest doctor state so map icon resets
+                              setViewMode('map');
+                            }}
+                          >
+                            <FaMapMarkerAlt className="mr-1" /> Voir sur la carte
+                          </Button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="text-center py-8">
+                {loadingDoctors || loadingUserLocation ? (
+                  <div className="flex flex-col items-center justify-center">
+                    <svg className="animate-spin h-8 w-8 text-gray-400" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    <h3 className="mt-2 text-sm font-medium text-gray-900">Chargement des médecins...</h3>
+                  </div>
+                ) : (
+                  <>
+                    <FaClinicMedical className="mx-auto h-12 w-12 text-gray-400" />
+                    <h3 className="mt-2 text-sm font-medium text-gray-900">Aucun médecin trouvé</h3>
+                    <p className="mt-1 text-sm text-gray-500">
+                      {userLocation?.permissionStatus === 'denied'
+                        ? "Veuillez activer votre localisation pour trouver des médecins à proximité ou ajuster les filtres."
+                        : "Aucun médecin n'a été trouvé avec les filtres actuels ou la base de données est vide."}
+                    </p>
+                    <div className="mt-6">
                       <Button
-                        size="sm"
-                        className="ml-4 px-4 py-2 rounded-full text-white font-medium"
+                        onClick={() => setViewMode('map')}
+                        className="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white"
                         style={{ backgroundColor: DEFAULT_PRESET_COLORS.default }}
                       >
-                        Voir le profil
+                        <FaGlobe className="mr-2" />
+                        Voir la carte
                       </Button>
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-              {closestDoctorsList.length > 5 && (
-                <p className="text-center text-sm text-gray-600 mt-4">
-                  Affichage des 5 meilleurs médecins. Plus sont disponibles sur la carte.
-                </p>
-              )}
-            </div>
-          </>
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="w-full h-[500px] rounded-xl shadow-lg border border-gray-200 overflow-hidden relative flex justify-center">
+            {renderMapContent()}
+          </div>
         )}
-
-
-        <div className="w-full h-[450px] rounded-xl shadow-lg border border-gray-200 overflow-hidden relative flex justify-center">
-          {renderMapContent()}
-        </div>
 
         {!loadingDoctors && doctors.length === 0 && !error && (
           <div className="text-center mt-6 p-4 rounded-lg border"
@@ -752,7 +986,7 @@ export default function FindDoctorsPage() {
             }}
           >
             <p className="font-semibold text-lg">Aucun médecin trouvé.</p>
-            <p className="text-sm">Nous n'avons pas pu récupérer les localisations des médecins. Veuillez vous assurer que votre backend est en cours d'exécution et accessible.</p>
+            <p className="text-sm">Nous n'avons pas pu récupérer les localisations des médecins.</p>
           </div>
         )}
       </div>

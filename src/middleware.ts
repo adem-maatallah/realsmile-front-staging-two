@@ -262,11 +262,24 @@ export async function middleware(req: NextRequest) {
     '/verify-email/', // Specific prefix for email verification
     '/verify-location', // NEW: Allow access to the location verification page
     '/accueil',
+    '/doctor-profile/[id]', 
+    /^\/doctor-profile\/[^/]+$/,
+    '/find-doctors', // Your main doctors list page
+
+     // Add this regex to allow access to /doctor-profile/:id
+// Add the doctor profile route to public routes
+
+
   ];
 
-  const isPublicRoute = PUBLIC_ROUTES.some(route =>
-    route.endsWith('/') ? pathname.startsWith(route) : pathname === route
-  );
+  const isPublicRoute = PUBLIC_ROUTES.some(route => {
+    if (typeof route === 'string') {
+      return route.endsWith('/') ? pathname.startsWith(route) : pathname === route;
+    } else if (route instanceof RegExp) {
+      return route.test(pathname);
+    }
+    return false;
+  });
   console.log(`[Middleware] Is public route (${pathname}): ${isPublicRoute}`);
 
   // If accessing a public route
