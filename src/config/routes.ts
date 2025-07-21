@@ -90,6 +90,7 @@ export const routes = {
     list: '/doctors',
     cases: (id: any) => `/doctors/${id}`,
     doctorFile: (id: any) => `/doctors/${id}/fiche`,
+    myConsultations: '/doctors/my-consultations', // <-- ADD THIS LINE
   },
 doctors: {
   list: '/find-doctors',

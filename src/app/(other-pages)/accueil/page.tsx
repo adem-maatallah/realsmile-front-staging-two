@@ -181,28 +181,26 @@ export default function FindDoctorsPage() {
   }, [closestDoctor, userLocation, filteredDoctors]);
 
   // Reverse geocode user location
-  const reverseGeocodeUserLocation = useCallback(async (lat: number, lng: number) => {
-    try {
-      const nominatimApiUrl = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lng}&accept-language=fr`;
-      const res = await fetch(nominatimApiUrl);
-      const data = await res.json();
+ const reverseGeocodeUserLocation = useCallback(async (lat: number, lng: number) => {
+  try {
+    const geocoder = new window.google.maps.Geocoder();
+    const response = await geocoder.geocode({ location: { lat, lng } });
 
-      if (res.ok && data && data.display_name) {
-        const fullAddress = data.display_name;
-        const countryCode = data.address?.country_code?.toUpperCase() || null;
-        setUserLocation(prev => prev ? { ...prev, formattedAddress: fullAddress, countryCode: countryCode } : null);
-        toast.success(`Votre localisation détectée : ${fullAddress.split(',')[0]}`);
-      } else {
-        const errorMessage = data.error || "Adresse introuvable via OpenStreetMap.";
-        toast.error(`La recherche d'adresse a échoué : ${errorMessage}`);
-        setUserLocation(prev => prev ? { ...prev, formattedAddress: errorMessage, countryCode: null } : null);
-      }
-    } catch (err) {
-      console.error("Le géocodage Nominatim a échoué :", err);
-      toast.error("La recherche d'adresse a échoué via OpenStreetMap.");
-      setUserLocation(prev => prev ? { ...prev, formattedAddress: "Échec de la requête de géocodage", countryCode: null } : null);
+    if (response.results[0]) {
+      const fullAddress = response.results[0].formatted_address;
+      const countryCode = response.results[0].address_components.find(c => c.types.includes('country'))?.short_name || null;
+      setUserLocation(prev => prev ? { ...prev, formattedAddress: fullAddress, countryCode: countryCode } : null);
+      toast.success(`Location detected: ${fullAddress.split(',')[0]}`);
+    } else {
+      toast.error("Could not find address for your location.");
+      setUserLocation(prev => prev ? { ...prev, formattedAddress: "Address not found", countryCode: null } : null);
     }
-  }, []);
+  } catch (err) {
+    console.error("Google Maps Geocoding failed:", err);
+    toast.error("Failed to get address from Google Maps.");
+    setUserLocation(prev => prev ? { ...prev, formattedAddress: "Geocoding request failed", countryCode: null } : null);
+  }
+}, []);
 
   // Update map bounds and center - modified to optionally fit only specific doctors
   const updateMapBoundsAndCenter = useCallback((
@@ -314,12 +312,14 @@ export default function FindDoctorsPage() {
   }, []);
 
   // Get user location
+ // Get user location
   useEffect(() => {
     if (typeof window === 'undefined' || !isLoaded) return;
 
     if (!navigator.geolocation) {
-      setError("La géolocalisation n'est pas prise en charge par votre navigateur.");
-      toast.error("La géolocalisation n'est pas prise en charge par votre navigateur.");
+      const errorMsg = "La géolocalisation n'est pas prise en charge par votre navigateur.";
+      setError(errorMsg);
+      toast.error(errorMsg);
       setLoadingUserLocation(false);
       setUserLocation({
         latitude: 0,
@@ -333,18 +333,22 @@ export default function FindDoctorsPage() {
 
     setLoadingUserLocation(true);
 
+    // This function now DIRECTLY sets the location without reverse geocoding
     const handleGeolocationSuccess = (position: GeolocationPosition) => {
       const { latitude, longitude } = position.coords;
+      
       setUserLocation(prev => ({
         ...prev!,
         latitude,
         longitude,
-        formattedAddress: null,
+        // We set the formattedAddress to the coordinates directly
+        formattedAddress: `Lat: ${latitude.toFixed(4)}, Lng: ${longitude.toFixed(4)}`,
         permissionStatus: 'granted'
       }));
+
+      toast.success("Localisation exacte détectée !");
       setError(null);
       setLoadingUserLocation(false);
-      reverseGeocodeUserLocation(latitude, longitude);
     };
 
     const handleGeolocationError = (geoError: GeolocationPositionError) => {
@@ -377,12 +381,14 @@ export default function FindDoctorsPage() {
       }));
     };
 
+    // Get current position
     navigator.geolocation.getCurrentPosition(
       handleGeolocationSuccess,
       handleGeolocationError,
       { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 }
     );
 
+    // Check permission status
     navigator.permissions.query({ name: 'geolocation' }).then((permissionStatus) => {
       const currentPermission = permissionStatus.state;
       setUserLocation(prev => prev ? { ...prev, permissionStatus: currentPermission } : {
@@ -393,7 +399,8 @@ export default function FindDoctorsPage() {
         countryCode: null
       });
     });
-  }, [isLoaded, reverseGeocodeUserLocation]);
+    // The dependency array is now simpler
+  }, [isLoaded]);
 
   // Function to calculate and update closest doctors for the LIST view
   const calculateDoctorsForList = useCallback(() => {
@@ -597,12 +604,13 @@ export default function FindDoctorsPage() {
                 position={{ lat: markerLat, lng: markerLng }}
                 title={doc.user_name || 'Médecin'}
                 onClick={() => setActiveInfoWindow(doc)}
-                icon={{
-                  url: (closestDoctor && closestDoctor.id === doc.id)
-                    ? 'http://maps.google.com/mapfiles/ms/icons/red-dot.png' // Red for the *single* closest doctor after button press
-                    : 'http://maps.google.com/mapfiles/ms/icons/green-dot.png', // Green for all other doctors
-                  scaledSize: new window.google.maps.Size(32, 32)
-                }}
+               icon={{
+  url: (closestDoctor && closestDoctor.id === doc.id)
+    ? 'doctor.png' // closest doctor
+    : 'doctor.png', // normal doctors
+  scaledSize: new window.google.maps.Size(40, 40), // adjust size
+  anchor: new window.google.maps.Point(20, 40) // bottom center anchor
+}}
               />
             );
           }

@@ -104,7 +104,10 @@ const roleAccessMap: any = {
     '/realsmile-ai/[caseId]',
     '/alerts/[patient_user_id]',
     '/alerts/[patient_user_id]/doctor',
-    '/alerts'
+    '/alerts',
+    '/doctors/my-consultations',
+    '/my-consultations'
+
   ],
   labo: [
     '/',
@@ -264,7 +267,7 @@ export async function middleware(req: NextRequest) {
     '/accueil',
     '/doctor-profile/[id]', 
     /^\/doctor-profile\/[^/]+$/,
-    '/find-doctors', // Your main doctors list page
+    '/find-doctors', 
 
      // Add this regex to allow access to /doctor-profile/:id
 // Add the doctor profile route to public routes
