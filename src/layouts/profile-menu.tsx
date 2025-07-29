@@ -12,7 +12,7 @@ import UserSettingsIcon from '@/components/icons/user-settings';
 import UserLockIcon from '@/components/icons/user-lock';
 import { BiHelpCircle } from 'react-icons/bi';
 import { useAuth } from '@/context/AuthContext';
-import { FaCalendarAlt } from 'react-icons/fa'; // <-- Import a calendar icon
+import { FaCalendarAlt } from 'react-icons/fa'; // <-- This icon will be used
 
 export default function ProfileMenu({
   buttonClassName,
@@ -90,18 +90,26 @@ function DropdownMenu() {
     ? user.profile_pic
     : 'https://isomorphic-furyroad.s3.amazonaws.com/public/avatars-blur/avatar-11.webp';
       
+  // --- FIX: Added "Gérer mes disponibilités" to the menu items for doctors ---
   const menuItems = [
     {
       name: 'Paramètres de profil',
-      href: routes.forms.profileSettings,
+      href: '/profile-settings',
       icon: <UserSettingsIcon className="me-2 h-5 w-5" />,
     },
-    // Conditionally add the "Mes Consultations" link for doctors
-    ...(user?.role === 'doctor' ? [{
-      name: 'Mes Consultations',
-      href: routes.doctor.myConsultations,
-      icon: <CalenderIcon className="me-2 h-5 w-5" />,
-    }] : []),
+    // Conditionally add doctor-specific links
+    ...(user?.role === 'doctor' ? [
+      {
+        name: 'Mes Consultations',
+        href: routes.doctor.myConsultations,
+        icon: <CalenderIcon className="me-2 h-5 w-5" />,
+      },
+      {
+        name: 'Gérer mes disponibilités', // <-- NEW LINK
+        href: routes.doctor.availabilitySettings, // <-- Route from your config
+        icon: <FaCalendarAlt className="me-2 h-5 w-5" />, // <-- Using the imported icon
+      }
+    ] : []),
   ];
 
   return (

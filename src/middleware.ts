@@ -63,6 +63,7 @@ const roleAccessMap: any = {
     '/realsmile-ai/[caseId]',
     '/alerts/[patient_user_id]',
     '/alerts',
+    
   ],
   doctor: [
     '/',
@@ -74,6 +75,9 @@ const roleAccessMap: any = {
     '/advancement',
     '/cases/sub-cases/[id]',
     '/profile-settings',
+    '/profile-settings',
+    '/profile-settings/password',
+    '/profile-settings/security',
     '/profile-settings/password',
     '/retaining-gutters/create',
     '/retaining-gutters',
@@ -106,7 +110,9 @@ const roleAccessMap: any = {
     '/alerts/[patient_user_id]/doctor',
     '/alerts',
     '/doctors/my-consultations',
-    '/my-consultations'
+    '/my-consultations',
+    '/doctors/settings',
+    '/doctors/availability-settings'
 
   ],
   labo: [
@@ -118,6 +124,9 @@ const roleAccessMap: any = {
     '/profile-settings/password',
     '/profile-settings/security',
     '/labo/iiwgl/[id]',
+    '/profile-settings',
+    '/profile-settings/password',
+    '/profile-settings/security',
     '/activity',
     '/access-denied',
     '/formations',
@@ -126,6 +135,9 @@ const roleAccessMap: any = {
   ],
   patient: [
     '/',
+    '/profile-settings',
+    '/profile-settings/password',
+    '/profile-settings/security',
     '/profile-settings',
     '/profile-settings/password',
     '/profile-settings/security',
@@ -144,6 +156,9 @@ const roleAccessMap: any = {
     '/cases/[id]',
     '/profile-settings',
     '/profile-settings/password',
+    '/profile-settings',
+    '/profile-settings/password',
+    '/profile-settings/security',
     '/profile-settings/security',
     '/retaining-gutters',
     '/activity',
@@ -265,6 +280,9 @@ export async function middleware(req: NextRequest) {
     '/verify-email/', // Specific prefix for email verification
     '/verify-location', // NEW: Allow access to the location verification page
     '/accueil',
+    '/profile-settings',
+    '/profile-settings/password',
+    '/profile-settings/security',
     '/doctor-profile/[id]', 
     /^\/doctor-profile\/[^/]+$/,
     '/find-doctors', 
